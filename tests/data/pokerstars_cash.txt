@@ -1,0 +1,74 @@
+PokerStars Hand #241234567890:  Hold'em No Limit ($0.25/$0.50 USD) - 2024/01/15 20:31:05 ET
+Table 'Aludra II' 6-max Seat #4 is the button
+Seat 1: Villain1 ($52.30 in chips)
+Seat 2: Hero ($50.00 in chips)
+Seat 3: Villain2 ($75.10 in chips)
+Seat 4: Villain3 ($48.00 in chips)
+Seat 5: Villain4 ($100.00 in chips)
+Seat 6: Villain5 ($22.75 in chips)
+Villain4: posts small blind $0.25
+Villain5: posts big blind $0.50
+*** HOLE CARDS ***
+Dealt to Hero [Ah Kd]
+Villain1: folds
+Hero: raises $1.00 to $1.50
+Villain2: calls $1.50
+Villain3: folds
+Villain4: folds
+Villain5: folds
+*** FLOP *** [7h 2c Ts]
+Hero: bets $2.00
+Villain2: calls $2.00
+*** TURN *** [7h 2c Ts] [Qd]
+Hero: checks
+Villain2: bets $4.00
+Hero: calls $4.00
+*** RIVER *** [7h 2c Ts Qd] [3h]
+Hero: checks
+Villain2: checks
+*** SHOW DOWN ***
+Hero: shows [Ah Kd] (high card Ace)
+Villain2: shows [9s 9d] (a pair of Nines)
+Villain2 collected $15.25 from pot
+*** SUMMARY ***
+Total pot $16.00 | Rake $0.75
+Board [7h 2c Ts Qd 3h]
+Seat 1: Villain1 folded before Flop (didn't bet)
+Seat 2: Hero showed [Ah Kd] and lost with high card Ace
+Seat 3: Villain2 showed [9s 9d] and won ($15.25) with a pair of Nines
+
+PokerStars Hand #241234567891:  Hold'em No Limit ($0.25/$0.50 USD) - 2024/01/15 20:33:12 ET
+Table 'Aludra II' 6-max Seat #5 is the button
+Seat 1: Villain1 ($52.30 in chips)
+Seat 2: Hero ($44.50 in chips)
+Seat 3: Villain2 ($90.85 in chips)
+Seat 4: Villain3 ($48.00 in chips)
+Seat 5: Villain4 ($100.00 in chips)
+Seat 6: Villain5 ($22.75 in chips)
+Villain5: posts small blind $0.25
+Villain1: posts big blind $0.50
+*** HOLE CARDS ***
+Dealt to Hero [Qs Qc]
+Hero: raises $1.00 to $1.50
+Villain2: raises $4.50 to $6.00
+Villain3: folds
+Villain4: folds
+Villain5: folds
+Villain1: folds
+Hero: calls $4.50
+*** FLOP *** [Qd 8h 3c]
+Hero: checks
+Villain2: bets $7.00
+Hero: raises $15.00 to $22.00
+Villain2: calls $15.00
+*** TURN *** [Qd 8h 3c] [2s]
+Hero: bets $16.50 and is all-in
+Villain2: calls $16.50
+*** RIVER *** [Qd 8h 3c 2s] [Kh]
+*** SHOW DOWN ***
+Hero: shows [Qs Qc] (three of a kind, Queens)
+Villain2: shows [Ac Ad] (a pair of Aces)
+Hero collected $88.25 from pot
+*** SUMMARY ***
+Total pot $89.75 | Rake $1.50
+Board [Qd 8h 3c 2s Kh]

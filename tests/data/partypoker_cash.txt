@@ -1,0 +1,26 @@
+***** Hand History for Game 9876543210 *****
+$0.25/$0.50 USD NL Texas Hold'em - Monday, January 15, 20:31:05 CET 2024
+Table Nice 42 (Real Money)
+Seat 4 is the button
+Total number of players : 6/6
+Seat 1: Alpha ( $52.30 USD )
+Seat 2: Hero ( $50.00 USD )
+Seat 3: Beta ( $75.10 USD )
+Seat 4: Gamma ( $48.00 USD )
+Seat 5: Delta ( $100.00 USD )
+Seat 6: Epsilon ( $22.75 USD )
+Delta posts small blind [$0.25 USD].
+Epsilon posts big blind [$0.50 USD].
+** Dealing down cards **
+Dealt to Hero [  Ah Kd ]
+Alpha folds
+Hero raises [$1.50 USD]
+Beta calls [$1.50 USD]
+Gamma folds
+Delta folds
+Epsilon folds
+** Dealing Flop ** [ 7h, 2c, Ts ]
+Hero bets [$2.00 USD]
+Beta folds
+Hero wins 3.75 USD
+** Summary **

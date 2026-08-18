@@ -1,0 +1,30 @@
+Poker Hand #RC1938274652: Hold'em No Limit ($0.05/$0.1) - 2024/02/03 11:02:44
+Table 'NLHRush12' 6-max Seat #1 is the button
+Seat 1: 4a1d6f2b ($10.35 in chips)
+Seat 2: Hero ($10.00 in chips)
+Seat 3: c9f8a1b2 ($14.22 in chips)
+Seat 4: e5d4c3b2 ($9.80 in chips)
+Seat 5: 77aa88bb ($22.10 in chips)
+Seat 6: bb11cc22 ($10.00 in chips)
+Hero: posts small blind $0.05
+c9f8a1b2: posts big blind $0.1
+*** HOLE CARDS ***
+Dealt to Hero [Js Jd]
+e5d4c3b2: folds
+77aa88bb: raises $0.2 to $0.3
+bb11cc22: folds
+4a1d6f2b: folds
+Hero: raises $0.9 to $1.2
+c9f8a1b2: folds
+77aa88bb: calls $0.9
+*** FLOP *** [2h 7d Jc]
+Hero: bets $1.5
+77aa88bb: calls $1.5
+*** TURN *** [2h 7d Jc] [9s]
+Hero: bets $3
+77aa88bb: folds
+Uncalled bet ($3) returned to Hero
+Hero collected $5.25 from pot
+*** SUMMARY ***
+Total pot $5.5 | Rake $0.25 | Jackpot $0
+Board [2h 7d Jc 9s]
