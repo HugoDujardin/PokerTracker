@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from ..stats.counters import COUNTERS, FLOAT_COUNTERS
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 BASE_TABLES = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -115,5 +115,18 @@ def hand_players_ddl() -> str:
     return "CREATE TABLE IF NOT EXISTS hand_players (\n" + ",\n".join(cols) + "\n);"
 
 
+def player_totals_ddl() -> str:
+    """Table de cumuls par joueur.
+
+    Elle evite au HUD de resommer des centaines de milliers de lignes a
+    chaque main: les compteurs y sont incrementes au fil de l'import.
+    """
+    cols = ["    player_id INTEGER PRIMARY KEY"]
+    cols += [f"    {c} INTEGER DEFAULT 0" for c in COUNTERS]
+    cols += [f"    {c} REAL DEFAULT 0" for c in FLOAT_COUNTERS]
+    return "CREATE TABLE IF NOT EXISTS player_totals (\n" + ",\n".join(cols) + "\n);"
+
+
 def full_schema() -> str:
-    return BASE_TABLES + "\n" + hand_players_ddl() + "\n" + HAND_PLAYERS_INDEXES
+    return (BASE_TABLES + "\n" + hand_players_ddl() + "\n" + HAND_PLAYERS_INDEXES + "\n"
+            + player_totals_ddl())

@@ -145,17 +145,54 @@ Choix structurants :
 
 ---
 
+## Essayer sans jouer
+
+Un generateur produit un historique de demonstration au format PokerStars,
+avec six styles de joueurs contrastes (nit, regulier, calling station,
+maniac...) :
+
+```powershell
+python tools\generate_demo_hands.py --hands 5000 --out demo\HandHistory_demo.txt
+python run.py --import demo
+python run.py
+```
+
+Ajoutez ensuite le dossier `demo` dans l'onglet Import, ouvrez la table de
+demonstration depuis l'onglet HUD, et les panneaux se remplissent.
+
+---
+
+## Performances
+
+Mesures sur 20 000 mains 6-max generees (machine de developpement, base
+SQLite en WAL) :
+
+| Operation | Mesure |
+|---|---|
+| Import complet (lecture + parsing + compteurs + ecriture) | ~1 400 mains/s |
+| Lecture des stats HUD de 6 joueurs | ~1 ms |
+| Rapport groupe par position | ~120 ms |
+| Courbe de gains sur 20 000 mains | ~35 ms |
+
+Les statistiques du HUD passent par une table de cumuls (`player_totals`)
+mise a jour a l'import : le HUD ne resomme jamais l'historique complet.
+Les rapports filtres, eux, interrogent le detail main par main.
+`Database.rebuild_totals()` permet de recalculer les cumuls si besoin.
+
+---
+
 ## Tests
 
 ```powershell
 python -m pytest
 ```
 
-78 tests couvrent les parsers (dont les montants localises, les antes, les
+81 tests couvrent les parsers (dont les montants localises, les antes, les
 mains tronquees), le moteur de statistiques (3bet, squeeze, vol de blindes,
 c-bet, check-raise, probe, abattage), la base et ses filtres, l'import
 incremental, l'evaluateur et les equites de reference, les profils HUD et
-l'interface (en mode hors ecran).
+l'interface (en mode hors ecran), ainsi que la coherence entre les cumuls
+precalcules et le recalcul complet.
 
 ---
 

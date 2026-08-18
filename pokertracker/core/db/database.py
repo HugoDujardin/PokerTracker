@@ -40,6 +40,12 @@ class Filter:
     hero_only: bool = False
     last_n_hands: Optional[int] = None
 
+    def is_empty(self) -> bool:
+        """Aucun critere: les cumuls precalcules peuvent etre utilises."""
+        return not any((self.rooms, self.formats, self.games, self.stakes, self.positions,
+                        self.tables, self.date_from, self.date_to, self.min_players,
+                        self.max_players, self.hero_only, self.last_n_hands))
+
     def where(self) -> tuple[str, list]:
         clauses: list[str] = []
         params: list = []
@@ -79,6 +85,7 @@ class Database:
             Path(self.path).parent.mkdir(parents=True, exist_ok=True)
         self._local = threading.local()
         self._write_lock = threading.RLock()
+        self._player_ids: dict[tuple[str, str], int] = {}
         self.migrate()
 
     # ------------------------------------------------------------ connexion
@@ -118,17 +125,27 @@ class Database:
 
     # ------------------------------------------------------------- joueurs
     def player_id(self, name: str, room: str = "", is_hero: bool = False) -> int:
-        cur = self.conn.execute("SELECT id FROM players WHERE name = ? AND room = ?", (name, room))
-        row = cur.fetchone()
-        if row:
+        key = (name, room)
+        cached = self._player_ids.get(key)
+        if cached is not None:
             if is_hero:
-                self.conn.execute("UPDATE players SET is_hero = 1 WHERE id = ?", (row["id"],))
-            return row["id"]
-        cur = self.conn.execute(
-            "INSERT INTO players(name, room, is_hero, first_seen) VALUES (?,?,?,?)",
-            (name, room, int(is_hero), datetime.now().isoformat(timespec="seconds")),
-        )
-        return int(cur.lastrowid)
+                self.conn.execute("UPDATE players SET is_hero = 1 WHERE id = ?", (cached,))
+            return cached
+        row = self.conn.execute("SELECT id FROM players WHERE name = ? AND room = ?",
+                                (name, room)).fetchone()
+        if row:
+            pid = int(row["id"])
+            if is_hero:
+                self.conn.execute("UPDATE players SET is_hero = 1 WHERE id = ?", (pid,))
+        else:
+            cur = self.conn.execute(
+                "INSERT INTO players(name, room, is_hero, first_seen) VALUES (?,?,?,?)",
+                (name, room, int(is_hero), datetime.now().isoformat(timespec="seconds")),
+            )
+            pid = int(cur.lastrowid)
+            self.conn.execute("INSERT OR IGNORE INTO player_totals(player_id) VALUES (?)", (pid,))
+        self._player_ids[key] = pid
+        return pid
 
     def find_players(self, term: str = "", limit: int = 200) -> list[sqlite3.Row]:
         sql = ("SELECT p.*, (SELECT COUNT(*) FROM hand_players hp WHERE hp.player_id = p.id) AS hands "
@@ -157,6 +174,12 @@ class Database:
         fixed_cols = [c for c, _ in schema_mod.HAND_PLAYERS_FIXED]
         hp_sql = (f"INSERT OR IGNORE INTO hand_players ({','.join(fixed_cols + counter_cols)}) "
                   f"VALUES ({','.join('?' * (len(fixed_cols) + len(counter_cols)))})")
+        totals_sql = ("UPDATE player_totals SET "
+                      + ", ".join(f"{c} = {c} + ?" for c in counter_cols)
+                      + " WHERE player_id = ?")
+        totals: dict[int, list[float]] = {}
+        last_seen: dict[int, str] = {}
+        tables_seen: dict[tuple[str, str], str] = {}
         with self._write_lock:
             conn = self.conn
             for hand in hands:
@@ -185,18 +208,35 @@ class Database:
                     values = [db_hand_id, pid, seat.seat_no, seat.position, float(seat.stack),
                               float(seat.stack) / bb if bb else 0.0, " ".join(seat.cards),
                               int(seat.is_hero), int(seat.showed), float(seat.net), float(seat.won)]
-                    values += [row.get(c, 0) for c in counter_cols]
+                    counters_row = [row.get(c, 0) for c in counter_cols]
+                    values += counters_row
                     rows.append(values)
+                    acc = totals.get(pid)
+                    if acc is None:
+                        totals[pid] = list(counters_row)
+                    else:
+                        for i, v in enumerate(counters_row):
+                            acc[i] += v
                 conn.executemany(hp_sql, rows)
-                conn.execute(
+                played = hand.played_at.isoformat(timespec="seconds")
+                tables_seen[(hand.room, hand.table_name)] = played
+                for seat in hand.seats:
+                    pid = self.player_id(seat.player, hand.room)
+                    if last_seen.get(pid, "") < played:
+                        last_seen[pid] = played
+                inserted += 1
+            if totals:
+                conn.executemany("INSERT OR IGNORE INTO player_totals(player_id) VALUES (?)",
+                                 [(pid,) for pid in totals])
+                conn.executemany(totals_sql, [acc + [pid] for pid, acc in totals.items()])
+            if last_seen:
+                conn.executemany("UPDATE players SET last_seen = ? WHERE id = ?",
+                                 [(when, pid) for pid, when in last_seen.items()])
+            if tables_seen:
+                conn.executemany(
                     "INSERT INTO tables_seen(room, name, last_seen) VALUES (?,?,?) "
                     "ON CONFLICT(room, name) DO UPDATE SET last_seen = excluded.last_seen",
-                    (hand.room, hand.table_name, hand.played_at.isoformat(timespec="seconds")))
-                conn.executemany(
-                    "UPDATE players SET last_seen = ? WHERE id = ?",
-                    [(hand.played_at.isoformat(timespec="seconds"),
-                      self.player_id(s.player, hand.room)) for s in hand.seats])
-                inserted += 1
+                    [(room, name, when) for (room, name), when in tables_seen.items()])
             conn.commit()
         return inserted
 
@@ -229,6 +269,8 @@ class Database:
         retourne alors un dictionnaire {valeur: compteurs}.
         """
         flt = flt or Filter()
+        if not group_by and flt.is_empty() and player_ids:
+            return self._totals(player_ids)
         where, params = flt.where()
         if player_ids:
             where += f" AND hp.player_id IN ({','.join('?' * len(player_ids))})"
@@ -246,12 +288,41 @@ class Database:
         row = self.conn.execute(sql, params).fetchone()
         return {c: (row[c] or 0) for c in ALL_COUNTERS} if row else {c: 0 for c in ALL_COUNTERS}
 
+    def _totals(self, player_ids: Sequence[int]) -> dict:
+        cols = ", ".join(f"SUM({c}) AS {c}" for c in ALL_COUNTERS)
+        sql = (f"SELECT {cols} FROM player_totals "
+               f"WHERE player_id IN ({','.join('?' * len(player_ids))})")
+        row = self.conn.execute(sql, list(player_ids)).fetchone()
+        return {c: (row[c] or 0) for c in ALL_COUNTERS} if row else {c: 0 for c in ALL_COUNTERS}
+
+    def rebuild_totals(self) -> None:
+        """Recalcule integralement la table de cumuls (maintenance)."""
+        cols = ", ".join(ALL_COUNTERS)
+        sums = ", ".join(f"SUM({c})" for c in ALL_COUNTERS)
+        with self._write_lock:
+            self.conn.execute("DELETE FROM player_totals")
+            self.conn.execute(
+                f"INSERT INTO player_totals(player_id, {cols}) "
+                f"SELECT player_id, {sums} FROM hand_players GROUP BY player_id")
+            self.conn.commit()
+
     def aggregate_many(self, names: Sequence[str], room: str = "",
                        flt: Optional[Filter] = None) -> dict[str, dict]:
         """Agrege les compteurs de plusieurs joueurs en une seule requete (HUD)."""
         if not names:
             return {}
         flt = flt or Filter()
+        if flt.is_empty():
+            cols = ", ".join(f"t.{c}" for c in ALL_COUNTERS)
+            sql = (f"SELECT p.name AS name, {cols} FROM player_totals t "
+                   f"JOIN players p ON p.id = t.player_id "
+                   f"WHERE p.name IN ({','.join('?' * len(names))})")
+            params = list(names)
+            if room:
+                sql += " AND p.room = ?"
+                params.append(room)
+            return {row["name"]: {c: (row[c] or 0) for c in ALL_COUNTERS}
+                    for row in self.conn.execute(sql, params)}
         where, params = flt.where()
         placeholders = ",".join("?" * len(names))
         where += f" AND p.name IN ({placeholders})"

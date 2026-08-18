@@ -80,3 +80,26 @@ def test_valeurs_distinctes(db):
     db.insert_hands(load("ggpoker_cash"))
     assert set(db.distinct("room")) == {"PokerStars", "GGPoker"}
     assert "0.25/0.5" in db.distinct("stake")
+
+
+def test_cumuls_incrementaux_coherents(db):
+    """Les cumuls precalcules (utilises par le HUD) doivent egaler le recalcul."""
+    db.insert_hands(load("pokerstars_cash"))
+    db.insert_hands(load("ggpoker_cash"))
+    rapide = db.aggregate_many(["Hero"], room="PokerStars")["Hero"]
+    db.rebuild_totals()
+    recalcule = db.aggregate_many(["Hero"], room="PokerStars")["Hero"]
+    assert rapide == recalcule
+    pid = db.player_id("Hero", "PokerStars")
+    lent = db.aggregate([pid], Filter(rooms=["PokerStars"]))
+    assert lent["hands"] == rapide["hands"] == 2
+    assert lent["vpip"] == rapide["vpip"]
+
+
+def test_cumuls_ignores_si_filtre(db):
+    db.insert_hands(load("pokerstars_cash"))
+    pid = db.player_id("Hero", "PokerStars")
+    assert Filter().is_empty()
+    assert not Filter(positions=["BTN"]).is_empty()
+    assert db.aggregate([pid], Filter(positions=["UTG"]))["hands"] == 1
+    assert db.aggregate([pid])["hands"] == 2
