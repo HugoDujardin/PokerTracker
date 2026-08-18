@@ -4,7 +4,10 @@ from __future__ import annotations
 RANKS = "23456789TJQKA"
 SUITS = "cdhs"
 SUIT_SYMBOLS = {"c": "♣", "d": "♦", "h": "♥", "s": "♠"}
+#: couleurs des enseignes sur fond sombre (texte, HUD)
 SUIT_COLORS = {"c": "#3f9d4a", "d": "#3d7ddb", "h": "#d0483f", "s": "#e8e8ea"}
+#: couleurs des enseignes dessinees sur une carte blanche (replayer)
+CARD_COLORS = {"c": "#1f7a3d", "d": "#1f5fbf", "h": "#c0392b", "s": "#15181d"}
 
 FULL_DECK = [r + s for r in RANKS for s in SUITS]
 

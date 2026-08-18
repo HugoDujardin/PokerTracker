@@ -1,6 +1,7 @@
 """Replayer de mains: rejoue une main action par action."""
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Dict, List, Optional
@@ -9,7 +10,7 @@ from PySide6.QtCore import QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPen
 from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget)
 
-from ..core.equity.cards import SUIT_COLORS, SUIT_SYMBOLS
+from ..core.equity.cards import CARD_COLORS, SUIT_COLORS, SUIT_SYMBOLS
 from ..core.equity.equity import equity
 from ..core.models import Action, ActionType, Hand, Street
 from ..core.parsers import registry
@@ -106,23 +107,21 @@ class TableCanvas(QWidget):
             return
 
         w, h = self.width(), self.height()
-        table_rect = QRectF(w * 0.14, h * 0.16, w * 0.72, h * 0.62)
+        table_rect = QRectF(w * 0.22, h * 0.24, w * 0.56, h * 0.50)
         painter.setBrush(QBrush(QColor("#1d4c34")))
         painter.setPen(QPen(QColor("#0d2a1d"), 6))
         painter.drawEllipse(table_rect)
 
         # board + pot
-        painter.setFont(QFont("Segoe UI", 14, QFont.Bold))
-        cards = " ".join(f"{c[0].upper()}{SUIT_SYMBOLS.get(c[1].lower(), '')}"
-                         for c in self.frame.board)
-        x = table_rect.center().x() - 90
+        painter.setFont(QFont("Segoe UI", 13, QFont.Bold))
+        x = table_rect.center().x() - 15 * len(self.frame.board)
         y = table_rect.center().y() - 22
         for card in self.frame.board:
             rect = QRectF(x, y, 26, 36)
             painter.setBrush(QColor("#f2f3f5"))
             painter.setPen(QPen(QColor("#0b0d10"), 1))
             painter.drawRoundedRect(rect, 3, 3)
-            painter.setPen(QColor(SUIT_COLORS.get(card[1].lower(), "#111")))
+            painter.setPen(QColor(CARD_COLORS.get(card[1].lower(), "#111")))
             painter.drawText(rect, Qt.AlignCenter,
                              f"{card[0].upper()}{SUIT_SYMBOLS.get(card[1].lower(), '')}")
             x += 30
@@ -134,12 +133,18 @@ class TableCanvas(QWidget):
 
         seats = sorted(self.hand.seats, key=lambda s: s.seat_no)
         hero_idx = next((i for i, s in enumerate(seats) if s.is_hero), 0)
-        points = layout_for(max(len(seats), 2))
+        n = len(seats)
+        box_w, box_h = 148, 50
+        cx, cy = table_rect.center().x(), table_rect.center().y()
+        rx, ry = table_rect.width() * 0.52, table_rect.height() * 0.62
         for i, seat in enumerate(seats):
-            rel = points[(i - hero_idx) % len(points)]
-            px = w * rel[0]
-            py = h * rel[1]
-            box = QRectF(px - 10, py - 6, 160, 46)
+            # le heros est place en bas, les autres tournent dans le sens horaire
+            angle = math.pi / 2 + 2 * math.pi * ((i - hero_idx) % n) / n
+            px = cx + rx * math.cos(angle) - box_w / 2
+            py = cy + ry * math.sin(angle) - box_h / 2
+            px = max(2, min(px, w - box_w - 2))
+            py = max(2, min(py, h - box_h - 2))
+            box = QRectF(px, py, box_w, box_h)
             active = self.frame.action and self.frame.action.player == seat.player
             folded = seat.player in self.frame.folded
             painter.setBrush(QColor("#232b35") if not active else QColor("#2f4b63"))
@@ -147,8 +152,9 @@ class TableCanvas(QWidget):
             painter.drawRoundedRect(box, 6, 6)
             painter.setPen(QColor("#8b97a6" if folded else "#e6e6e6"))
             painter.setFont(QFont("Segoe UI", 9, QFont.Bold if seat.is_hero else QFont.Normal))
-            name = seat.player[:14] + (" (BTN)" if seat.is_button else "")
-            painter.drawText(QRectF(box.left() + 6, box.top() + 3, 150, 16), Qt.AlignLeft, name)
+            name = seat.player[:13] + (" (BTN)" if seat.is_button else "")
+            painter.drawText(QRectF(box.left() + 6, box.top() + 2, box_w - 10, 16),
+                             Qt.AlignLeft | Qt.AlignVCenter, name)
             painter.setFont(QFont("Segoe UI", 8))
             painter.setPen(QColor("#a8b4c2"))
             stack = self.frame.stacks.get(seat.player, seat.stack)
@@ -156,25 +162,27 @@ class TableCanvas(QWidget):
             eq = self.equities.get(seat.player)
             if eq is not None and not folded:
                 info += f"  ·  {eq:.0f}%"
-            painter.drawText(QRectF(box.left() + 6, box.top() + 18, 150, 14), Qt.AlignLeft, info)
-            # cartes
-            cx = box.left() + 6
+            painter.drawText(QRectF(box.left() + 6, box.top() + 17, box_w - 10, 14),
+                             Qt.AlignLeft | Qt.AlignVCenter, info)
+            # cartes du joueur
+            cardx = box.left() + 6
             for card in seat.cards:
-                rect = QRectF(cx, box.top() + 30, 15, 14)
+                rect = QRectF(cardx, box.top() + 32, 17, 16)
                 painter.setBrush(QColor("#f2f3f5"))
                 painter.setPen(QPen(QColor("#0b0d10"), 1))
                 painter.drawRoundedRect(rect, 2, 2)
-                painter.setPen(QColor(SUIT_COLORS.get(card[1].lower(), "#111")))
-                painter.setFont(QFont("Segoe UI", 7))
+                painter.setPen(QColor(CARD_COLORS.get(card[1].lower(), "#111")))
+                painter.setFont(QFont("Segoe UI", 8, QFont.Bold))
                 painter.drawText(rect, Qt.AlignCenter,
                                  f"{card[0].upper()}{SUIT_SYMBOLS.get(card[1].lower(), '')}")
-                cx += 17
+                cardx += 19
             bet = self.frame.bets.get(seat.player)
             if bet:
                 painter.setPen(QColor("#f0c848"))
                 painter.setFont(QFont("Segoe UI", 8, QFont.Bold))
-                painter.drawText(QRectF(box.left() + 70, box.top() + 30, 90, 14), Qt.AlignLeft,
-                                 f"mise {bet}")
+                painter.setFont(QFont("Segoe UI", 8, QFont.Bold))
+                painter.drawText(QRectF(box.left() + 62, box.top() + 32, box_w - 66, 16),
+                                 Qt.AlignRight | Qt.AlignVCenter, f"mise {bet}")
 
 
 class Replayer(QWidget):
@@ -204,8 +212,10 @@ class Replayer(QWidget):
         self.btn_next = QPushButton(">")
         self.btn_last = QPushButton(">|")
         self.btn_equity = QPushButton("Calculer l'equite")
+        self.btn_play.setFixedWidth(88)
         for b in (self.btn_first, self.btn_prev, self.btn_play, self.btn_next, self.btn_last):
-            b.setFixedWidth(64)
+            if b is not self.btn_play:
+                b.setFixedWidth(52)
             controls.addWidget(b)
         controls.addWidget(self.btn_equity)
         controls.addStretch(1)

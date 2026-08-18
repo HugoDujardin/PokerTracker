@@ -6,6 +6,13 @@ Il reprend le fonctionnement d'un tracker moderne de type Hand2Note 4.1 :
 import automatique des historiques, base de mains, HUD dynamique superpose
 aux tables, popups detailles, replayer, rapports et travail sur les ranges.
 
+![HUD pose sur une table](docs/images/hud_table.png)
+
+*Le HUD sur une table : chaque joueur a son panneau, et les joueurs aux
+blindes (ici Nitrogen et Hero) affichent automatiquement le panneau
+« Defense des blindes » avec des statistiques filtrees sur leur position —
+d'ou l'echantillon reduit (666 mains contre 4000).*
+
 ---
 
 ## Ce que fait le logiciel
@@ -22,6 +29,15 @@ aux tables, popups detailles, replayer, rapports et travail sur les ranges.
 | **Joueurs** | Recherche, tableau comparatif, statistiques par position, notes, etiquettes et couleurs reprises dans le HUD. |
 | **Ranges** | Grille 13x13 editable, notation texte (`77+, AQs+, A2s-A5s`, `15%`), pourcentage de combinaisons, calculateur d'equite main contre range avec board. |
 | **Confort** | Theme sombre, table de demonstration pour regler le HUD sans ouvrir de client de poker, configuration et base rangees dans `%APPDATA%\PokerTracker`. |
+
+### Quelques ecrans
+
+| | |
+|---|---|
+| ![Tableau de bord](docs/images/tableau_de_bord.png) | ![Rapports](docs/images/rapports.png) |
+| Tableau de bord : courbe de gains, sessions, statistiques globales | Rapports : statistiques croisees par position |
+| ![Replayer](docs/images/mains_replayer.png) | ![Editeur de HUD](docs/images/editeur_hud.png) |
+| Liste des mains et replayer avec calcul d'equite | Editeur de profil HUD et conditions dynamiques |
 
 ---
 
