@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Iterator
 
 from ..models import Action, ActionType, GameType, Hand, Seat, Street, TableFormat, normalize_cards
-from .base import HandParser, ParseError, registry, to_decimal
+from .base import HandParser, ParseError, parse_buyin, registry, to_decimal
 
 CARD = r"[2-9TJQKA][cdhs]"
 
@@ -119,7 +119,7 @@ class PokerStarsParser(HandParser):
         if is_tourney:
             hand.table_format = TableFormat.MTT
             hand.tournament_id = m.group("tid")
-            hand.buyin = to_decimal(m.group("buyin"))
+            hand.buyin = parse_buyin(m.group("buyin"))
             hand.currency = "CHIPS"
         else:
             cur = re.search(r"\b(USD|EUR|GBP|CAD)\b", m.group(0))
@@ -207,8 +207,10 @@ class PokerStarsParser(HandParser):
             # mise courante par joueur sur la street (pour convertir "raises X to Y")
             committed: dict[str, Decimal] = {}
             if street == Street.PREFLOP:
+                # les antes ne comptent pas dans la mise de la street: un
+                # "raises X to Y" se calcule a partir des blindes seules
                 for a in hand.actions:
-                    if a.type.is_blind:
+                    if a.type.is_blind and a.type is not ActionType.POST_ANTE:
                         committed[a.player] = max(committed.get(a.player, Decimal(0)), a.to_amount)
             for am in RE_ACTION.finditer(chunk):
                 name = am.group("name").strip()

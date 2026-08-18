@@ -7,7 +7,7 @@ from decimal import Decimal
 from typing import Iterator
 
 from ..models import Action, ActionType, GameType, Hand, Seat, Street, TableFormat, normalize_cards
-from .base import HandParser, ParseError, registry, to_decimal
+from .base import HandParser, ParseError, parse_buyin, registry, to_decimal
 
 RE_SPLIT = re.compile(r"\n\s*\n(?=Winamax Poker)", re.I)
 
@@ -70,7 +70,7 @@ class WinamaxParser(HandParser):
         )
         if m.group("kind").lower().startswith("tournament"):
             hand.table_format = TableFormat.SPIN if "expresso" in m.group(0).lower() else TableFormat.MTT
-            hand.buyin = to_decimal(m.group("buyin"))
+            hand.buyin = parse_buyin(m.group("buyin"))
             hand.currency = "CHIPS"
             tid = re.search(r"HandId:\s*#(\d+)", block)
             hand.tournament_id = tid.group(1) if tid else ""

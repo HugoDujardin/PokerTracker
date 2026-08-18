@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pokertracker"
+version = "1.0.0"
+description = "Suivi de mains, statistiques et HUD temps reel pour le poker en ligne (Windows 11)"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["PySide6-Essentials>=6.6"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pyinstaller>=6.3"]
+
+[project.scripts]
+pokertracker = "pokertracker.app:main"
+
+[project.gui-scripts]
+pokertracker-gui = "pokertracker.app:main"
+
+[tool.setuptools.packages.find]
+include = ["pokertracker*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

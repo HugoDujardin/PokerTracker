@@ -1,0 +1,37 @@
+PokerStars Hand #250000000001: Tournament #3000000001, $10+$1 USD Hold'em No Limit - Level XI (400/800) - 2024/03/02 21:15:44 ET
+Table '3000000001 24' 9-max Seat #2 is the button
+Seat 1: Sitrus ($16600 in chips)
+Seat 2: Hero ($21500 in chips)
+Seat 3: Bolek ($9800 in chips)
+Seat 4: Marlow ($34000 in chips)
+Seat 5: Ninja77 ($15250 in chips)
+Sitrus: posts the ante 100
+Hero: posts the ante 100
+Bolek: posts the ante 100
+Marlow: posts the ante 100
+Ninja77: posts the ante 100
+Bolek: posts small blind 400
+Marlow: posts big blind 800
+*** HOLE CARDS ***
+Dealt to Hero [Ac Qh]
+Ninja77: folds
+Sitrus: raises 1000 to 1800
+Hero: raises 3400 to 5200
+Bolek: folds
+Marlow: folds
+Sitrus: calls 3400
+*** FLOP *** [Qs 8d 3h]
+Sitrus: checks
+Hero: bets 4200
+Sitrus: raises 7000 to 11200 and is all-in
+Hero: calls 7000
+*** TURN *** [Qs 8d 3h] [2c]
+*** RIVER *** [Qs 8d 3h 2c] [9s]
+*** SHOW DOWN ***
+Sitrus: shows [8h 8s] (three of a kind, Eights)
+Hero: shows [Ac Qh] (a pair of Queens)
+Sitrus collected 26100 from pot
+*** SUMMARY ***
+Total pot 26100 | Rake 0
+Board [Qs 8d 3h 2c 9s]
+Seat 1: Sitrus showed [8h 8s] and won (26100) with three of a kind, Eights

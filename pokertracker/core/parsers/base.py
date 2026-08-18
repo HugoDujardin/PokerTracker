@@ -34,6 +34,14 @@ def to_decimal(value: str | None) -> Decimal:
         return Decimal(0)
 
 
+def parse_buyin(text: str | None) -> Decimal:
+    """Cout total d'un tournoi: '$10+$1' -> 11, '0,45€ + 0,05€' -> 0.50."""
+    if not text:
+        return Decimal(0)
+    parts = [p for p in re.split(r"\+", str(text)) if re.search(r"\d", p)]
+    return sum((to_decimal(p) for p in parts), Decimal(0))
+
+
 class ParseError(ValueError):
     """Historique illisible ou format non reconnu."""
 

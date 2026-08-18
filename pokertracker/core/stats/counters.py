@@ -274,6 +274,7 @@ class HandCounters:
             # le dernier agresseur est-il encore dans le coup ?
             aggr_alive = bool(aggressor) and aggressor not in folded
             aggr_acted = False
+            prev_checked = self._prev_street_checked(street)
             for a in actions:
                 p = a.player
                 row = self.rows.get(p)
@@ -285,13 +286,12 @@ class HandCounters:
                 if not bettor:  # personne n'a encore mise sur cette street
                     if first:
                         if p == aggressor and aggr_alive:
-                            if last_aggr_street == Street.PREFLOP and street == Street.FLOP:
-                                row[f"cbet_opp_{code}"] += 1
-                            elif self._prev_street_checked(street):
+                            # street precedente checkee: le c-bet devient retarde
+                            if prev_checked:
                                 row[f"dcbet_opp_{code}"] += 1
                             else:
                                 row[f"cbet_opp_{code}"] += 1
-                        elif aggr_alive and not aggr_acted:
+                        elif aggr_alive and not aggr_acted and not prev_checked:
                             row[f"donk_opp_{code}"] += 1
                         else:
                             row[f"probe_opp_{code}"] += 1
@@ -304,12 +304,12 @@ class HandCounters:
                         bettor = p
                         street_aggressor = p
                         if p == aggressor and aggr_alive:
-                            if self._prev_street_checked(street) and street != Street.FLOP:
+                            if prev_checked:
                                 row[f"dcbet_{code}"] += 1
                             else:
                                 row[f"cbet_{code}"] += 1
-                                is_cbet = True
-                        elif aggr_alive and not aggr_acted:
+                            is_cbet = True
+                        elif aggr_alive and not aggr_acted and not prev_checked:
                             row[f"donk_{code}"] += 1
                         else:
                             row[f"probe_{code}"] += 1
