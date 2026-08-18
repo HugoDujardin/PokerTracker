@@ -119,5 +119,7 @@ def test_popup(db):
     manager.on_new_hands(hands)
     sections = manager.popup_data("Hero", "PokerStars")
     titres = [t for t, _ in sections]
-    assert titres == ["Preflop", "Flop", "Turn", "River", "Global"]
+    assert titres == ["Preflop", "Flop", "Turn", "River", "Global", "Par position"]
     assert any(label == "VPIP" for label, _v, _n in sections[0][1])
+    positions = [label for label, _v, _n in sections[-1][1] if label]
+    assert positions == ["UTG", "MP"]        # les deux positions jouees par le heros

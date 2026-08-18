@@ -248,6 +248,9 @@ class HudManager:
         return out
 
     # ------------------------------------------------------------- popups
+    #: statistiques detaillees par position dans le popup
+    POPUP_POSITION_STATS = ("vpip", "pfr", "3bet", "steal", "fsteal", "wwsf")
+
     def popup_data(self, player: str, room: str) -> List[tuple[str, List[tuple[str, str, int]]]]:
         """Contenu du popup detaille d'un joueur, par section."""
         agg = self.stats_for(player, room)
@@ -260,7 +263,28 @@ class HudManager:
                     continue
                 rows.append((stat.label, stat.format(agg), stat.sample(agg)))
             sections.append((section.title, rows))
+        by_position = self.positional_stats(player, room)
+        if by_position:
+            sections.append(("Par position", by_position))
         return sections
+
+    def positional_stats(self, player: str, room: str) -> List[tuple[str, str, int]]:
+        """Lignes 'position: VPIP/PFR/3Bet...' affichees dans le popup."""
+        row = self.db.get_player(player, room)
+        if row is None:
+            return []
+        groups = self.db.aggregate([row["id"]], group_by="hp.position")
+        order = [p for p in ("UTG", "UTG1", "UTG2", "MP", "MP1", "HJ", "CO", "BTN", "SB", "BB")
+                 if p in groups]
+        out: List[tuple[str, str, int]] = []
+        for position in order:
+            agg = groups[position]
+            values = " ".join(f"{sd.get(c).format(agg):>3}" for c in self.POPUP_POSITION_STATS)
+            out.append((position, values, int(agg.get("hands", 0) or 0)))
+        if out:
+            entete = " ".join(f"{sd.get(c).label[:3]:>3}" for c in self.POPUP_POSITION_STATS)
+            out.insert(0, ("", entete, 0))
+        return out
 
     def positional_table(self, player: str, room: str, codes: Sequence[str]) -> Dict[str, dict]:
         """Statistiques par position (onglet 'Positions' du popup)."""

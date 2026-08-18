@@ -152,8 +152,8 @@ class TableTracker:
         WNDENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
 
         def callback(hwnd, _lparam):
-            if not user32.IsWindowVisible(hwnd):
-                return True
+            if not user32.IsWindowVisible(hwnd) or user32.IsIconic(hwnd):
+                return True          # fenetre cachee ou reduite: pas de HUD
             length = user32.GetWindowTextLengthW(hwnd)
             if length == 0:
                 return True
