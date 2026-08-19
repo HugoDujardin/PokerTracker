@@ -36,8 +36,9 @@ class StatLabel(QLabel):
 class HudPanelWidget(QWidget):
     """Panneau HUD d'un joueur."""
 
-    request_popup = Signal(str, str)          # joueur, room
+    request_popup = Signal(str, str, str)     # joueur, room, variante
     request_note = Signal(str, str)
+
     moved = Signal(str, int, QPoint)          # cle de table, siege, decalage
 
     def __init__(self, table_key: str, seat_no: int, settings: Settings) -> None:
@@ -51,6 +52,7 @@ class HudPanelWidget(QWidget):
         self.settings = settings
         self.player = ""
         self.room = ""
+        self.game = ""
         self.offset = QPoint(0, 0)
         self._drag_from: Optional[QPoint] = None
         self._bg = QColor("#101317")
@@ -79,9 +81,11 @@ class HudPanelWidget(QWidget):
         painter.setPen(QPen(self._border, 1))
         painter.drawRoundedRect(self.rect().adjusted(0, 0, -1, -1), 5, 5)
 
-    def update_content(self, data: HudPlayerPanel, room: str, font: QFont) -> None:
+    def update_content(self, data: HudPlayerPanel, room: str, font: QFont,
+                       game: str = "") -> None:
         self.player = data.player
         self.room = room
+        self.game = game
         self._bg = QColor(data.color or data.panel.background)
         self._border = QColor(data.panel.border)
         while self._grid.count():
@@ -129,12 +133,13 @@ class HudPanelWidget(QWidget):
 
     def enterEvent(self, event) -> None:  # pragma: no cover - interaction
         if self.settings.popup_on_hover and self.player:
-            self.request_popup.emit(self.player, self.room)
+            self.request_popup.emit(self.player, self.room, self.game)
 
     def _menu(self, pos) -> None:  # pragma: no cover - interaction
         menu = QMenu(self)
         act_popup = QAction("Statistiques detaillees", menu)
-        act_popup.triggered.connect(lambda: self.request_popup.emit(self.player, self.room))
+        act_popup.triggered.connect(
+            lambda: self.request_popup.emit(self.player, self.room, self.game))
         act_note = QAction("Note sur le joueur...", menu)
         act_note.triggered.connect(lambda: self.request_note.emit(self.player, self.room))
         act_hide = QAction("Masquer ce panneau", menu)
@@ -266,7 +271,8 @@ class HudController:
                 if offset is not None:
                     widget.offset = QPoint(offset)
                 self.panels[key] = widget
-            widget.update_content(data, table.state.room if table.state else window.room, self._font)
+            widget.update_content(data, table.state.room if table.state else window.room,
+                                  self._font, table.state.game if table.state else "")
             size = (widget.sizeHint().width(), widget.sizeHint().height())
             x, y = to_screen(rect, (data.rel_x, data.rel_y), size)
             widget.move(x + widget.offset.x(), y + widget.offset.y())
@@ -274,9 +280,10 @@ class HudController:
             seen.add(key)
 
     # ------------------------------------------------------------------
-    def show_popup(self, player: str, room: str) -> None:
-        sections = self.manager.popup_data(player, room)
-        self.popup.show_for(player, sections)
+    def show_popup(self, player: str, room: str, game: str = "") -> None:
+        sections = self.manager.popup_data(player, room, game)
+        titre = player + (f"  ({game})" if game and self.manager.filter_by_game else "")
+        self.popup.show_for(titre, sections)
 
     def _on_note(self, player: str, room: str) -> None:
         if self.note_callback:

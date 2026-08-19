@@ -1,0 +1,29 @@
+PokerStars Hand #251111111111:  Omaha Pot Limit ($0.25/$0.50 USD) - 2024/04/10 18:05:00 ET
+Table 'Cassiopeia' 6-max Seat #2 is the button
+Seat 1: Hero ($50.00 in chips)
+Seat 2: OmahaFish ($62.00 in chips)
+Seat 3: PloReg ($75.00 in chips)
+Seat 4: Villain4 ($48.00 in chips)
+Seat 5: Villain5 ($100.00 in chips)
+Seat 6: Villain6 ($22.75 in chips)
+PloReg: posts small blind $0.25
+Villain4: posts big blind $0.50
+*** HOLE CARDS ***
+Dealt to Hero [Ah Kd Qs Jc]
+Villain5: folds
+Villain6: folds
+Hero: raises $1.25 to $1.75
+OmahaFish: calls $1.75
+PloReg: folds
+Villain4: folds
+*** FLOP *** [Th 9c 2d]
+Hero: bets $3.00
+OmahaFish: calls $3.00
+*** TURN *** [Th 9c 2d] [8s]
+Hero: bets $9.00
+OmahaFish: folds
+Uncalled bet ($9.00) returned to Hero
+Hero collected $10.05 from pot
+*** SUMMARY ***
+Total pot $10.50 | Rake $0.45
+Board [Th 9c 2d 8s]

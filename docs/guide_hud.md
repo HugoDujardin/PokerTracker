@@ -126,6 +126,19 @@ Exemple fourni par défaut (profil `Cash 6-max`) :
 | Défense des blindes | position SB ou BB | statistiques **filtrées sur la position** |
 | Principal | toujours vrai | affichage standard |
 
+## Une variante à la fois
+
+Le HUD n'affiche que les statistiques de la **variante jouée à la table** :
+à une table d'Omaha, il montre les statistiques Omaha du joueur, jamais un
+mélange avec son Hold'em. L'échantillon affiché est donc celui de cette
+variante. Le réglage se décoche dans l'onglet HUD
+(« Statistiques de la variante jouée uniquement ») si vous préférez tout
+cumuler.
+
+Dans les autres onglets, le sélecteur **« Jeu »** de la barre de filtres
+joue le même rôle — par exemple pour exclure l'Omaha de vos statistiques —
+et le choix est mémorisé pour toute l'application.
+
 ## Argent réel uniquement
 
 Par défaut, le HUD (comme le reste du logiciel) ne compte que les mains

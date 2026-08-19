@@ -25,9 +25,10 @@ FORMAT_LABELS = {"mtt": "MTT", "sng": "Sit & Go", "spin": "Spin / Expresso", "ca
 class TournamentsTab(QWidget):
     """Bilan des tournois et de la bankroll."""
 
-    def __init__(self, db: Database, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, db: Database, settings=None, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.db = db
+        self.settings = settings
         self.hero_box = QComboBox()
         self.hero_box.currentIndexChanged.connect(self.refresh)
         self.curve_box = QComboBox()
@@ -35,7 +36,7 @@ class TournamentsTab(QWidget):
         self.curve_box.currentIndexChanged.connect(self.refresh)
 
         from .tabs import FilterBar
-        self.filters = FilterBar(db)
+        self.filters = FilterBar(db, settings)
         self.filters.changed.connect(self.refresh)
 
         self.summary = QLabel("")

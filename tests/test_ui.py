@@ -136,3 +136,41 @@ def test_fenetre_principale(qt_app, rempli, tmp_path):
     window.hud_tab.open_demo()
     assert window.hud_tab.demo is not None
     assert any(t.window.table_name for t in manager.snapshot())
+
+
+def test_filtre_de_variante_dans_l_interface(qt_app, db):
+    """La barre de filtres propose les variantes presentes en base."""
+    from pokertracker.config import Settings
+    from pokertracker.ui.tabs import FilterBar
+
+    db.insert_hands(load("pokerstars_cash"))
+    db.insert_hands(load("pokerstars_plo"))
+    settings = Settings()
+    barre = FilterBar(db, settings)
+    libelles = [barre.game.itemText(i) for i in range(barre.game.count())]
+    assert libelles == ["Toutes", "Hold'em No Limit", "Omaha Pot Limit"]
+    assert barre.build().games == ()                       # toutes par defaut
+
+    barre.game.setCurrentIndex(1)
+    assert barre.build().games == ["nlhe"]
+    assert settings.default_game == "nlhe"                 # memorise pour toute l'application
+
+    # une nouvelle barre reprend le reglage
+    autre = FilterBar(db, settings)
+    assert autre.build().games == ["nlhe"]
+
+
+def test_onglet_joueurs_suit_la_variante(qt_app, db):
+    from pokertracker.config import Settings
+    from pokertracker.ui.tabs import PlayersTab
+
+    db.insert_hands(load("pokerstars_cash"))
+    db.insert_hands(load("pokerstars_plo"))
+    tab = PlayersTab(db, Settings())
+    tab.search.setText("Hero")
+    tab.refresh_list()
+    tab.players.selectRow(0)
+    toutes = tab.stats_table.item(0, 1).text()             # ligne « Mains »
+    tab.filters.game.setCurrentIndex(tab.filters.game.findData("plo"))
+    assert tab.stats_table.item(0, 1).text() != toutes
+    assert tab.stats_table.item(0, 1).text() == "1"

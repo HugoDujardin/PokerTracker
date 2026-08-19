@@ -6,7 +6,8 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Iterator
 
-from ..models import Action, ActionType, GameType, Hand, Seat, Street, TableFormat, normalize_cards
+from ..models import (Action, ActionType, GameType, Hand, Seat, Street, TableFormat,
+                      detect_game, normalize_cards)
 from .base import HandParser, ParseError, parse_buyin, registry, to_decimal
 
 CARD = r"[2-9TJQKA][cdhs]"
@@ -63,17 +64,6 @@ STREET_MARKERS = [
     (re.compile(r"^\*\*\*\s+SHOW ?DOWN\s+\*\*\*", re.M | re.I), Street.SHOWDOWN),
 ]
 RE_SUMMARY = re.compile(r"^\*\*\*\s+SUMMARY\s+\*\*\*", re.M | re.I)
-
-
-def detect_game(label: str) -> GameType:
-    low = label.lower()
-    if "omaha" in low:
-        if "5 card" in low or "5-card" in low:
-            return GameType.PLO5
-        return GameType.PLO
-    if "hold'em" in low or "holdem" in low:
-        return GameType.LHE if "limit" in low and "no limit" not in low and "pot limit" not in low else GameType.NLHE
-    return GameType.OTHER
 
 
 class PokerStarsParser(HandParser):

@@ -6,7 +6,8 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Iterator
 
-from ..models import Action, ActionType, GameType, Hand, Seat, Street, TableFormat, normalize_cards
+from ..models import (Action, ActionType, GameType, Hand, Seat, Street, TableFormat,
+                      detect_game, normalize_cards)
 from .base import HandParser, ParseError, registry, to_decimal
 from .dates import parse_datetime
 
@@ -64,7 +65,7 @@ class PartyPokerParser(HandParser):
             hand_id=gid.group("hid"),
             room=self.room,
             played_at=played_at,
-            game=GameType.PLO if "omaha" in st.group("game").lower() else GameType.NLHE,
+            game=detect_game(st.group("game")),
             sb=sb,
             bb=bb,
             currency=st.group("cur") or "USD",

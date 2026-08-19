@@ -45,12 +45,20 @@ class Filter:
     money: str = "real"
 
     def is_empty(self) -> bool:
-        """Aucun critere: les cumuls precalcules peuvent etre utilises."""
+        """Aucun critere du tout."""
+        return not self.games and self.uses_totals()
+
+    def uses_totals(self) -> bool:
+        """Vrai si les cumuls precalcules suffisent a repondre.
+
+        Les cumuls sont stockes par joueur *et par variante*: un filtre sur
+        la variante (exclure l'Omaha, par exemple) reste donc sur le chemin
+        rapide utilise par le HUD.
+        """
         return self.money == "real" and not any(
-            (self.rooms, self.formats, self.games, self.stakes, self.positions, self.tables,
-             self.tournament_ids,
-             self.date_from, self.date_to, self.min_players, self.max_players, self.hero_only,
-             self.last_n_hands))
+            (self.rooms, self.formats, self.stakes, self.positions, self.tables,
+             self.tournament_ids, self.date_from, self.date_to, self.min_players,
+             self.max_players, self.hero_only, self.last_n_hands))
 
     def where(self) -> tuple[str, list]:
         clauses: list[str] = []
@@ -97,7 +105,11 @@ class Database:
         self._local = threading.local()
         self._write_lock = threading.RLock()
         self._player_ids: dict[tuple[str, str], int] = {}
+        self._totals_need_rebuild = False
         self.migrate()
+        if self._totals_need_rebuild:
+            self.rebuild_totals()
+            self._totals_need_rebuild = False
 
     # ------------------------------------------------------------ connexion
     @property
@@ -139,6 +151,12 @@ class Database:
             for col in FLOAT_COUNTERS:
                 if col not in existing:
                     self.conn.execute(f"ALTER TABLE hand_players ADD COLUMN {col} REAL DEFAULT 0")
+            totals_cols = {r[1] for r in self.conn.execute("PRAGMA table_info(player_totals)")}
+            if totals_cols and "game" not in totals_cols:
+                # ancienne table (tous jeux confondus): on la reconstruit
+                self.conn.execute("DROP TABLE player_totals")
+                self.conn.executescript(schema_mod.player_totals_ddl())
+                self._totals_need_rebuild = True
             self.conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES ('schema_version', ?)",
                               (str(schema_mod.SCHEMA_VERSION),))
             self.conn.commit()
@@ -163,7 +181,6 @@ class Database:
                 (name, room, int(is_hero), datetime.now().isoformat(timespec="seconds")),
             )
             pid = int(cur.lastrowid)
-            self.conn.execute("INSERT OR IGNORE INTO player_totals(player_id) VALUES (?)", (pid,))
         self._player_ids[key] = pid
         return pid
 
@@ -196,8 +213,8 @@ class Database:
                   f"VALUES ({','.join('?' * (len(fixed_cols) + len(counter_cols)))})")
         totals_sql = ("UPDATE player_totals SET "
                       + ", ".join(f"{c} = {c} + ?" for c in counter_cols)
-                      + " WHERE player_id = ?")
-        totals: dict[int, list[float]] = {}
+                      + " WHERE player_id = ? AND game = ?")
+        totals: dict[tuple[int, str], list[float]] = {}
         last_seen: dict[int, str] = {}
         tables_seen: dict[tuple[str, str], str] = {}
         with self._write_lock:
@@ -235,10 +252,12 @@ class Database:
                     rows.append(values)
                     if hand.real_money:
                         # les cumuls precalcules (utilises par le HUD et les
-                        # ecrans sans filtre) ne comptent que l'argent reel
-                        acc = totals.get(pid)
+                        # ecrans sans filtre) ne comptent que l'argent reel,
+                        # et restent separes par variante
+                        key = (pid, hand.game.value)
+                        acc = totals.get(key)
                         if acc is None:
-                            totals[pid] = list(counters_row)
+                            totals[key] = list(counters_row)
                         else:
                             for i, v in enumerate(counters_row):
                                 acc[i] += v
@@ -251,9 +270,11 @@ class Database:
                         last_seen[pid] = played
                 inserted += 1
             if totals:
-                conn.executemany("INSERT OR IGNORE INTO player_totals(player_id) VALUES (?)",
-                                 [(pid,) for pid in totals])
-                conn.executemany(totals_sql, [acc + [pid] for pid, acc in totals.items()])
+                conn.executemany(
+                    "INSERT OR IGNORE INTO player_totals(player_id, game) VALUES (?,?)",
+                    list(totals))
+                conn.executemany(totals_sql,
+                                 [acc + [pid, game] for (pid, game), acc in totals.items()])
             if last_seen:
                 conn.executemany("UPDATE players SET last_seen = ? WHERE id = ?",
                                  [(when, pid) for pid, when in last_seen.items()])
@@ -294,8 +315,8 @@ class Database:
         retourne alors un dictionnaire {valeur: compteurs}.
         """
         flt = flt or Filter()
-        if not group_by and flt.is_empty() and player_ids:
-            return self._totals(player_ids)
+        if not group_by and flt.uses_totals() and player_ids:
+            return self._totals(player_ids, flt.games)
         where, params = flt.where()
         if player_ids:
             where += f" AND hp.player_id IN ({','.join('?' * len(player_ids))})"
@@ -313,11 +334,15 @@ class Database:
         row = self.conn.execute(sql, params).fetchone()
         return {c: (row[c] or 0) for c in ALL_COUNTERS} if row else {c: 0 for c in ALL_COUNTERS}
 
-    def _totals(self, player_ids: Sequence[int]) -> dict:
+    def _totals(self, player_ids: Sequence[int], games: Sequence[str] = ()) -> dict:
         cols = ", ".join(f"SUM({c}) AS {c}" for c in ALL_COUNTERS)
         sql = (f"SELECT {cols} FROM player_totals "
                f"WHERE player_id IN ({','.join('?' * len(player_ids))})")
-        row = self.conn.execute(sql, list(player_ids)).fetchone()
+        params = list(player_ids)
+        if games:
+            sql += f" AND game IN ({','.join('?' * len(games))})"
+            params += list(games)
+        row = self.conn.execute(sql, params).fetchone()
         return {c: (row[c] or 0) for c in ALL_COUNTERS} if row else {c: 0 for c in ALL_COUNTERS}
 
     def rebuild_counters(self, progress=None, batch: int = 500) -> int:
@@ -366,10 +391,10 @@ class Database:
         with self._write_lock:
             self.conn.execute("DELETE FROM player_totals")
             self.conn.execute(
-                f"INSERT INTO player_totals(player_id, {cols}) "
-                f"SELECT hp.player_id, {sums} FROM hand_players hp "
+                f"INSERT INTO player_totals(player_id, game, {cols}) "
+                f"SELECT hp.player_id, h.game, {sums} FROM hand_players hp "
                 f"JOIN hands h ON h.id = hp.hand_id WHERE h.real_money = 1 "
-                f"GROUP BY hp.player_id")
+                f"GROUP BY hp.player_id, h.game")
             self.conn.commit()
 
     def aggregate_many(self, names: Sequence[str], room: str = "",
@@ -378,8 +403,8 @@ class Database:
         if not names:
             return {}
         flt = flt or Filter()
-        if flt.is_empty():
-            cols = ", ".join(f"t.{c}" for c in ALL_COUNTERS)
+        if flt.uses_totals():
+            cols = ", ".join(f"SUM(t.{c}) AS {c}" for c in ALL_COUNTERS)
             sql = (f"SELECT p.name AS name, {cols} FROM player_totals t "
                    f"JOIN players p ON p.id = t.player_id "
                    f"WHERE p.name IN ({','.join('?' * len(names))})")
@@ -387,6 +412,10 @@ class Database:
             if room:
                 sql += " AND p.room = ?"
                 params.append(room)
+            if flt.games:
+                sql += f" AND t.game IN ({','.join('?' * len(flt.games))})"
+                params += list(flt.games)
+            sql += " GROUP BY p.name"
             return {row["name"]: {c: (row[c] or 0) for c in ALL_COUNTERS}
                     for row in self.conn.execute(sql, params)}
         where, params = flt.where()

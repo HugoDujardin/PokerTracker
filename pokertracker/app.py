@@ -108,7 +108,8 @@ def main(argv: list[str] | None = None) -> int:
 
     watcher = HandHistoryWatcher(db, settings.hh_folders, settings.scan_interval,
                                  archive_dir=settings.effective_archive_dir())
-    manager = HudManager(db, profile, min_hands=settings.hud_min_hands)
+    manager = HudManager(db, profile, min_hands=settings.hud_min_hands,
+                         filter_by_game=settings.hud_filter_by_game)
     manager.restore_recent_tables()      # le HUD est utilisable des le lancement
     watcher.subscribe(manager.on_new_hands)
     controller = HudController(manager, settings)

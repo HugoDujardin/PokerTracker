@@ -148,13 +148,21 @@ def last_hand_analysis(db: Database, player_id: int, question: str = "") -> Opti
 
 # ------------------------------------------------------------ statistiques
 def stats_analysis(db: Database, player_id: int, label: str = "", question: str = "",
-                   flt: Optional[Filter] = None) -> Analysis:
+                   flt: Optional[Filter] = None, game: str = "") -> Analysis:
+    """Statistiques d'un joueur, eventuellement limitees a une variante."""
+    from ..core.models import GAME_LABELS
+
+    if game and flt is None:
+        flt = Filter(games=[game])
+    elif game and not flt.games:
+        flt.games = [game]
     agg = db.aggregate([player_id], flt)
     positions = db.aggregate([player_id], flt, group_by="hp.position")
+    variante = f" · {GAME_LABELS.get(game, game)}" if game else ""
     return Analysis(
         title="Analyse des statistiques",
-        subtitle=f"{label} · {int(agg.get('hands', 0) or 0)} mains",
-        context=build_stats_context(agg, positions, label or "le joueur"),
+        subtitle=f"{label} · {int(agg.get('hands', 0) or 0)} mains{variante}",
+        context=build_stats_context(agg, positions, label or "le joueur", game),
         question=question.strip() or (
             "Analyse ces statistiques: identifie les trois fuites les plus couteuses, explique "
             "pourquoi elles coutent des jetons, et propose pour chacune un ajustement concret. "

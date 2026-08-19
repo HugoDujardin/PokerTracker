@@ -57,6 +57,11 @@ class HudTab(QWidget):
         self.hover_popup = QCheckBox("Popup au survol")
         self.hover_popup.setChecked(settings.popup_on_hover)
         self.hover_popup.stateChanged.connect(self._apply_settings)
+        self.by_game = QCheckBox("Statistiques de la variante jouee uniquement")
+        self.by_game.setToolTip("Evite de melanger Hold'em et Omaha dans les memes "
+                                "statistiques.")
+        self.by_game.setChecked(settings.hud_filter_by_game)
+        self.by_game.stateChanged.connect(self._apply_settings)
 
         btn_demo = QPushButton("Ouvrir une table de demonstration")
         btn_demo.clicked.connect(self.open_demo)
@@ -69,6 +74,7 @@ class HudTab(QWidget):
         form.addRow("Opacite", self.opacity)
         form.addRow("Mains minimum pour afficher un joueur", self.min_hands)
         form.addRow(self.hover_popup)
+        form.addRow(self.by_game)
         form.addRow(btn_demo)
         form.addRow(btn_reset)
 
@@ -108,8 +114,12 @@ class HudTab(QWidget):
         self.settings.hud_opacity = self.opacity.value()
         self.settings.hud_min_hands = self.min_hands.value()
         self.settings.popup_on_hover = self.hover_popup.isChecked()
+        self.settings.hud_filter_by_game = self.by_game.isChecked()
         self.settings.save()
         self.manager.min_hands = self.settings.hud_min_hands
+        self.manager.filter_by_game = self.settings.hud_filter_by_game
+        self.manager.invalidate()
+        self.controller.refresh()
 
     def _reset_offsets(self) -> None:
         self.controller.offsets.clear()
@@ -188,11 +198,11 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("PokerTracker — suivi et HUD de poker en ligne")
         self.resize(1280, 820)
 
-        self.dashboard = DashboardTab(db)
-        self.players = PlayersTab(db)
-        self.hands = HandsTab(db)
-        self.reports = ReportsTab(db)
-        self.tournaments = TournamentsTab(db)
+        self.dashboard = DashboardTab(db, settings)
+        self.players = PlayersTab(db, settings)
+        self.hands = HandsTab(db, settings)
+        self.reports = ReportsTab(db, settings)
+        self.tournaments = TournamentsTab(db, settings)
         self.ranges = RangesTab()
         self.hud_tab = HudTab(db, settings, manager, controller)
         self.coach = CoachTab(db, settings, current_hand=self.selected_hand)

@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDateEdi
                                QTextEdit, QVBoxLayout, QWidget)
 
 from ..core.db import Database, Filter
+from ..core.models import GAME_LABELS
 from ..core.equity.equity import equity
 from ..core.equity.ranges import parse_range, range_percent, range_to_text
 from ..core.importer import Importer, detect_hh_directories
@@ -29,13 +30,17 @@ SUMMARY_CODES = ["hands", "vpip", "pfr", "3bet", "f3bet", "steal", "cbet_f", "wt
 
 
 class FilterBar(QWidget):
-    """Barre de filtres commune (room, limite, format, periode)."""
+    """Barre de filtres commune (variante, room, limite, format, periode)."""
 
     changed = Signal()
 
-    def __init__(self, db: Database, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, db: Database, settings=None, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.db = db
+        self.settings = settings
+        self.game = QComboBox()
+        self.game.setToolTip("Ne calculer les statistiques que sur cette variante "
+                             "(pour ne pas melanger Hold'em et Omaha).")
         self.room = QComboBox()
         self.stake = QComboBox()
         self.fmt = QComboBox()
@@ -53,20 +58,42 @@ class FilterBar(QWidget):
         self.play_money.stateChanged.connect(self.changed)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        for label, widget in (("Room", self.room), ("Limite", self.stake), ("Format", self.fmt),
-                              ("Joueurs", self.players), ("Du", self.date_from),
-                              ("Au", self.date_to)):
+        for label, widget in (("Jeu", self.game), ("Room", self.room), ("Limite", self.stake),
+                              ("Format", self.fmt), ("Joueurs", self.players),
+                              ("Du", self.date_from), ("Au", self.date_to)):
             layout.addWidget(QLabel(label))
             layout.addWidget(widget)
         layout.addWidget(self.play_money)
         layout.addStretch(1)
-        for widget in (self.room, self.stake, self.fmt, self.players):
+        for widget in (self.game, self.room, self.stake, self.fmt, self.players):
             widget.currentIndexChanged.connect(self.changed)
+        self.game.currentIndexChanged.connect(self._remember_game)
         for widget in (self.date_from, self.date_to):
             widget.dateChanged.connect(self.changed)
         self.reload()
 
+    def _remember_game(self) -> None:
+        """La variante choisie devient le reglage par defaut de l'application."""
+        if self.settings is not None:
+            self.settings.default_game = self.game.currentData() or ""
+            self.settings.save()
+
     def reload(self) -> None:
+        courant = self.game.currentData()
+        self.game.blockSignals(True)
+        self.game.clear()
+        self.game.addItem("Toutes", "")
+        try:
+            variantes = self.db.distinct("game")
+        except Exception:
+            variantes = []
+        for code in variantes:
+            self.game.addItem(GAME_LABELS.get(code, code), code)
+        defaut = courant if courant is not None else (
+            self.settings.default_game if self.settings else "")
+        index = self.game.findData(defaut or "")
+        self.game.setCurrentIndex(max(0, index))
+        self.game.blockSignals(False)
         for widget, column in ((self.room, "room"), (self.stake, "stake"), (self.fmt, "fmt")):
             current = widget.currentText()
             widget.blockSignals(True)
@@ -82,6 +109,8 @@ class FilterBar(QWidget):
 
     def build(self) -> Filter:
         flt = Filter()
+        if self.game.currentData():
+            flt.games = [self.game.currentData()]
         if self.room.currentIndex() > 0:
             flt.rooms = [self.room.currentText()]
         if self.stake.currentIndex() > 0:
@@ -104,9 +133,10 @@ class FilterBar(QWidget):
 class DashboardTab(QWidget):
     """Vue d'ensemble des resultats du heros."""
 
-    def __init__(self, db: Database, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, db: Database, settings=None, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.db = db
+        self.settings = settings
         self.hero_box = QComboBox()
         self.hero_box.currentIndexChanged.connect(self.refresh)
         self.unit_box = QComboBox()
@@ -117,7 +147,7 @@ class DashboardTab(QWidget):
         self.show_ev.setToolTip("Remplace le resultat des all-in par leur esperance "
                                 "mathematique: l'ecart entre les deux courbes est la chance.")
         self.show_ev.stateChanged.connect(self.refresh)
-        self.filters = FilterBar(db)
+        self.filters = FilterBar(db, settings)
         self.filters.changed.connect(self.refresh)
 
         self.graph = WinningsGraph()
@@ -246,10 +276,13 @@ class DashboardTab(QWidget):
 class PlayersTab(QWidget):
     """Recherche de joueurs, statistiques detaillees et notes."""
 
-    def __init__(self, db: Database, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, db: Database, settings=None, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.db = db
+        self.settings = settings
         self.current_player: Optional[dict] = None
+        self.filters = FilterBar(db, settings)
+        self.filters.changed.connect(self._on_filters_changed)
 
         self.search = QLineEdit()
         self.search.setPlaceholderText("Rechercher un joueur...")
@@ -282,6 +315,7 @@ class PlayersTab(QWidget):
         form.addRow(btn_save)
 
         left = QVBoxLayout()
+        left.addWidget(self.filters)
         left.addWidget(self.search)
         left.addWidget(self.players, 1)
         left_widget = QWidget()
@@ -304,7 +338,12 @@ class PlayersTab(QWidget):
         layout.addWidget(split)
 
     # ------------------------------------------------------------------
+    def _on_filters_changed(self) -> None:
+        self.refresh_list()
+        self._on_selected()
+
     def refresh_list(self) -> None:
+        flt = self.filters.build()
         rows = self.db.find_players(self.search.text(), limit=300)
         ids = [r["id"] for r in rows]
         aggs = {}
@@ -313,7 +352,7 @@ class PlayersTab(QWidget):
                 aggs[row["id"]] = None
         self.players.setRowCount(len(rows))
         for i, row in enumerate(rows):
-            agg = self.db.aggregate([row["id"]])
+            agg = self.db.aggregate([row["id"]], flt)
             values = [row["name"], row["room"], str(int(agg.get("hands", 0) or 0)),
                       sd.get("vpip").format(agg), sd.get("pfr").format(agg),
                       sd.get("3bet").format(agg), sd.get("bb100").format(agg)]
@@ -335,9 +374,10 @@ class PlayersTab(QWidget):
         if row is None:
             return
         self.current_player = dict(row)
-        agg = self.db.aggregate([player_id])
+        flt = self.filters.build()
+        agg = self.db.aggregate([player_id], flt)
         self.stats_table.show_stats(agg)
-        groups = self.db.aggregate([player_id], group_by="hp.position")
+        groups = self.db.aggregate([player_id], flt, group_by="hp.position")
         self.positions.show_groups(groups, SUMMARY_CODES, "Position", POSITION_ORDER)
         self.note.setPlainText(row["note"] or "")
         self.color.setCurrentText(row["color"] or "")
@@ -360,16 +400,17 @@ class PlayersTab(QWidget):
 class HandsTab(QWidget):
     """Liste des mains jouees et replayer."""
 
-    def __init__(self, db: Database, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, db: Database, settings=None, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.db = db
+        self.settings = settings
         self.player_box = QComboBox()
         self.player_box.currentIndexChanged.connect(self.refresh)
         self.only_won = QCheckBox("Mains gagnees")
         self.only_won.stateChanged.connect(self.refresh)
         self.only_showdown = QCheckBox("Avec abattage")
         self.only_showdown.stateChanged.connect(self.refresh)
-        self.filters = FilterBar(db)
+        self.filters = FilterBar(db, settings)
         self.filters.changed.connect(self.refresh)
 
         self.hands = QTableWidget(0, 7)
@@ -449,20 +490,22 @@ class HandsTab(QWidget):
 
 
 class ReportsTab(QWidget):
-    """Rapports croises: statistiques par position, limite, format..."""
+    """Rapports croises: statistiques par position, limite, variante..."""
 
     GROUPS = {
         "Position": ("hp.position", POSITION_ORDER),
         "Limite": ("h.stake", []),
+        "Variante": ("h.game", []),
         "Room": ("h.room", []),
         "Format": ("h.fmt", []),
         "Table": ("h.table_name", []),
         "Nombre de joueurs": ("h.nb_players", []),
     }
 
-    def __init__(self, db: Database, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, db: Database, settings=None, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.db = db
+        self.settings = settings
         self.player_box = QComboBox()
         self.player_box.currentIndexChanged.connect(self.refresh)
         self.group_box = QComboBox()
@@ -471,7 +514,7 @@ class ReportsTab(QWidget):
         self.category_box = QComboBox()
         self.category_box.addItems(["Resume"] + sd.CATEGORIES)
         self.category_box.currentIndexChanged.connect(self.refresh)
-        self.filters = FilterBar(db)
+        self.filters = FilterBar(db, settings)
         self.filters.changed.connect(self.refresh)
         self.table = ComparisonTable()
 
@@ -510,7 +553,10 @@ class ReportsTab(QWidget):
             return
         column, order = self.GROUPS[self.group_box.currentText()]
         groups = self.db.aggregate([player_id], self.filters.build(), group_by=column)
-        groups = {str(k): v for k, v in groups.items()}
+        if column == "h.game":
+            groups = {GAME_LABELS.get(k, str(k)): v for k, v in groups.items()}
+        else:
+            groups = {str(k): v for k, v in groups.items()}
         category = self.category_box.currentText()
         codes = SUMMARY_CODES if category == "Resume" else [s.code for s in sd.by_category(category)]
         self.table.show_groups(groups, codes, self.group_box.currentText(), order)

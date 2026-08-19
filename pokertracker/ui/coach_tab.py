@@ -324,7 +324,8 @@ class CoachTab(QWidget):
             QMessageBox.information(self, "Coach IA", "Aucun joueur selectionne.")
             return
         self.run_analysis(stats_analysis(self.db, player_id, self.player_box.currentText(),
-                                         self.question.text()))
+                                         self.question.text(),
+                                         game=self.settings.default_game))
 
     # ------------------------------------------------------------ execution
     def run_analysis(self, analysis: Analysis) -> None:

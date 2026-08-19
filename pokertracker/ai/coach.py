@@ -162,9 +162,16 @@ def build_hand_context(hand: Hand, stats: Optional[Dict[str, dict]] = None,
 
 
 def build_stats_context(agg: dict, by_position: Optional[Dict[str, dict]] = None,
-                        label: str = "Joueur") -> str:
+                        label: str = "Joueur", game: str = "") -> str:
     """Tableau de statistiques pret a analyser."""
-    lines = [f"Statistiques de {label} sur {int(agg.get('hands', 0) or 0)} mains", ""]
+    from ..core.models import GAME_LABELS
+
+    entete = f"Statistiques de {label} sur {int(agg.get('hands', 0) or 0)} mains"
+    if game:
+        entete += f" — variante: {GAME_LABELS.get(game, game)}"
+    else:
+        entete += " — toutes variantes confondues"
+    lines = [entete, ""]
     for titre, codes in STAT_GROUPS.items():
         entries = []
         for code in codes:

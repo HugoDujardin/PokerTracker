@@ -40,6 +40,7 @@ class TableState:
     button_seat: int = 0
     bb: float = 1.0
     table_format: str = "cash"
+    game: str = "nlhe"
     hero: str = ""
     seats: Dict[int, SeatState] = field(default_factory=dict)
     last_hand_id: str = ""
@@ -53,6 +54,7 @@ class TableState:
         self.button_seat = hand.button_seat
         self.bb = float(hand.big_blind() or 1)
         self.table_format = hand.table_format.value
+        self.game = hand.game.value
         self.hero = hand.hero or self.hero
         self.last_hand_id = hand.hand_id
         self.updated_at = time.time()
@@ -125,11 +127,14 @@ class HudManager:
     """Fait le lien entre les mains importees, la base et les fenetres de table."""
 
     def __init__(self, db: Database, profile: HudProfile, tracker: Optional[TableTracker] = None,
-                 min_hands: int = 0) -> None:
+                 min_hands: int = 0, filter_by_game: bool = True) -> None:
         self.db = db
         self.profile = profile
         self.tracker = tracker or TableTracker()
         self.min_hands = min_hands
+        #: n'affiche que les statistiques de la variante jouee a la table
+        #: (sinon Hold'em et Omaha seraient melanges)
+        self.filter_by_game = filter_by_game
         self.tables: Dict[str, TableState] = {}
         #: affiche la derniere table connue quand une fenetre n'est pas reconnue
         self.fallback_to_last_table = True
@@ -147,8 +152,9 @@ class HudManager:
                     self.tables[key] = state
                 state.update_from_hand(hand)
                 for seat in hand.seats:                 # les stats du joueur ont change
-                    self._stats_cache.pop((seat.player, hand.room, "all"), None)
-                    self._stats_cache.pop((seat.player, hand.room, seat.position), None)
+                    for key in [k for k in self._stats_cache
+                                if k[0] == seat.player and k[1] == hand.room]:
+                        self._stats_cache.pop(key, None)
 
     def restore_recent_tables(self, limit: int = 12) -> int:
         """Reconstruit l'etat des dernieres tables jouees depuis la base.
@@ -179,12 +185,17 @@ class HudManager:
                 self.tables.pop(key, None)
 
     # ---------------------------------------------------------------- stats
-    def stats_for(self, player: str, room: str, scope: str = "all", position: str = "") -> dict:
-        key = (player, room, position if scope == "position" else "all")
+    def stats_for(self, player: str, room: str, scope: str = "all", position: str = "",
+                  game: str = "") -> dict:
+        """Statistiques d'un joueur, limitees a la variante jouee si demande."""
+        game = game if self.filter_by_game else ""
+        key = (player, room, f"{position if scope == 'position' else 'all'}|{game}")
         cached = self._stats_cache.get(key)
         if cached is not None:
             return cached
-        flt = Filter(positions=[position]) if scope == "position" and position else Filter()
+        flt = Filter(games=[game] if game else ())
+        if scope == "position" and position:
+            flt.positions = [position]
         agg = self.db.aggregate_many([player], room=room, flt=flt).get(player, {})
         self._stats_cache[key] = agg
         return agg
@@ -201,7 +212,7 @@ class HudManager:
         positions = seat_positions(list(state.seats), hero_seat, state.max_seats)
         for seat_no, seat in sorted(state.seats.items()):
             panel_ctx_position = seat.next_position or seat.position
-            agg_all = self.stats_for(seat.player, state.room)
+            agg_all = self.stats_for(seat.player, state.room, game=state.game)
             hands = int(agg_all.get("hands", 0) or 0)
             if self.min_hands and hands < self.min_hands and not seat.is_hero:
                 continue
@@ -213,7 +224,8 @@ class HudManager:
             panel = self.profile.panel_for(ctx)
             if panel is None:
                 continue
-            agg = (self.stats_for(seat.player, state.room, "position", panel_ctx_position)
+            agg = (self.stats_for(seat.player, state.room, "position", panel_ctx_position,
+                                  game=state.game)
                    if panel.scope == "position" else agg_all)
             rows: List[List[HudCell]] = []
             for row in panel.rows:
@@ -275,9 +287,10 @@ class HudManager:
     #: statistiques detaillees par position dans le popup
     POPUP_POSITION_STATS = ("vpip", "pfr", "3bet", "steal", "fsteal", "wwsf")
 
-    def popup_data(self, player: str, room: str) -> List[tuple[str, List[tuple[str, str, int]]]]:
+    def popup_data(self, player: str, room: str,
+                   game: str = "") -> List[tuple[str, List[tuple[str, str, int]]]]:
         """Contenu du popup detaille d'un joueur, par section."""
-        agg = self.stats_for(player, room)
+        agg = self.stats_for(player, room, game=game)
         sections = []
         for section in self.profile.popups:
             rows = []
@@ -287,17 +300,20 @@ class HudManager:
                     continue
                 rows.append((stat.label, stat.format(agg), stat.sample(agg)))
             sections.append((section.title, rows))
-        by_position = self.positional_stats(player, room)
+        by_position = self.positional_stats(player, room, game)
         if by_position:
             sections.append(("Par position", by_position))
         return sections
 
-    def positional_stats(self, player: str, room: str) -> List[tuple[str, str, int]]:
+    def positional_stats(self, player: str, room: str,
+                         game: str = "") -> List[tuple[str, str, int]]:
         """Lignes 'position: VPIP/PFR/3Bet...' affichees dans le popup."""
         row = self.db.get_player(player, room)
         if row is None:
             return []
-        groups = self.db.aggregate([row["id"]], group_by="hp.position")
+        game = game if self.filter_by_game else ""
+        flt = Filter(games=[game] if game else ())
+        groups = self.db.aggregate([row["id"]], flt, group_by="hp.position")
         order = [p for p in ("UTG", "UTG1", "UTG2", "MP", "MP1", "HJ", "CO", "BTN", "SB", "BB")
                  if p in groups]
         out: List[tuple[str, str, int]] = []

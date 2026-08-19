@@ -68,11 +68,51 @@ class ActionType(str, Enum):
 
 
 class GameType(str, Enum):
-    NLHE = "nlhe"
-    PLO = "plo"
-    PLO5 = "plo5"
-    LHE = "lhe"
+    NLHE = "nlhe"       # Hold'em no limit
+    LHE = "lhe"         # Hold'em limit / pot limit
+    PLO = "plo"         # Omaha 4 cartes
+    PLO5 = "plo5"       # Omaha 5 cartes
+    PLO8 = "plo8"       # Omaha hi/lo
     OTHER = "other"
+
+    @property
+    def label(self) -> str:
+        return GAME_LABELS.get(self.value, self.value)
+
+    @property
+    def is_holdem(self) -> bool:
+        return self in (GameType.NLHE, GameType.LHE)
+
+    @property
+    def is_omaha(self) -> bool:
+        return self in (GameType.PLO, GameType.PLO5, GameType.PLO8)
+
+
+#: libelles affiches dans les filtres et les rapports
+GAME_LABELS = {
+    "nlhe": "Hold'em No Limit",
+    "lhe": "Hold'em Limit",
+    "plo": "Omaha Pot Limit",
+    "plo5": "Omaha 5 cartes",
+    "plo8": "Omaha Hi/Lo",
+    "other": "Autre variante",
+}
+
+
+def detect_game(label: str) -> "GameType":
+    """Reconnait la variante a partir du libelle ecrit par la room."""
+    low = (label or "").lower()
+    if "omaha" in low or "plo" in low:
+        if "hi/lo" in low or "hi-lo" in low or "8 or better" in low or "hi/low" in low:
+            return GameType.PLO8
+        if "5 card" in low or "5-card" in low or "five card" in low or "plo5" in low:
+            return GameType.PLO5
+        return GameType.PLO
+    if "hold" in low:
+        limite = ("no limit" not in low and "nl" not in low and "pot limit" not in low
+                  and "pl " not in low)
+        return GameType.LHE if (limite and "limit" in low) else GameType.NLHE
+    return GameType.OTHER
 
 
 class TableFormat(str, Enum):

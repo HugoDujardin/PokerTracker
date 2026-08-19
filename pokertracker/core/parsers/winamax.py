@@ -6,7 +6,8 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Iterator
 
-from ..models import Action, ActionType, GameType, Hand, Seat, Street, TableFormat, normalize_cards
+from ..models import (Action, ActionType, GameType, Hand, Seat, Street, TableFormat,
+                      detect_game, normalize_cards)
 from .base import HandParser, ParseError, parse_buyin, registry, to_decimal
 
 RE_SPLIT = re.compile(r"\n\s*\n(?=Winamax Poker)", re.I)
@@ -62,7 +63,7 @@ class WinamaxParser(HandParser):
             hand_id=m.group("hid"),
             room=self.room,
             played_at=datetime.strptime(m.group("date"), "%Y/%m/%d %H:%M:%S"),
-            game=GameType.PLO if "omaha" in m.group("game").lower() else GameType.NLHE,
+            game=detect_game(m.group("game")),
             sb=to_decimal(m.group("sb")),
             bb=to_decimal(m.group("bb2") or m.group("bb")),
             currency="EUR",

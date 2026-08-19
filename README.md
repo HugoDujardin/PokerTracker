@@ -29,6 +29,7 @@ d'ou l'echantillon reduit (666 mains contre 4000).*
 | **Tournois** | Lecture des resumes de tournoi (PokerStars, Winamax): buy-in, primes, entrants, place, gains. Bilan par periode et par format: inscriptions, ITM, **bulles**, ROI, profit, victoires, place moyenne, buy-in moyen. |
 | **Bankroll** | Depots, retraits et ajustements; bankroll = mouvements + resultats cash + resultats tournois, avec courbe d'evolution. |
 | **Coach IA (gratuit)** | Analyses en un clic: **dernier tournoi**, **tournoi choisi dans la liste**, **dernier coup joue**, **coup affiche dans le replayer**, **statistiques du joueur**. Fonctionne avec l'offre gratuite de **Google Gemini** (cle AI Studio, sans carte bancaire); Anthropic reste disponible pour qui a deja une cle. Reponse en direct, donnees envoyees consultables. |
+| **Filtre par variante** | Hold'em No Limit, Hold'em Limit, Omaha PL, Omaha 5 cartes, Omaha Hi/Lo sont reconnus et **jamais melanges**: un selecteur « Jeu » dans chaque ecran limite les statistiques a une variante (memorise pour toute l'application), un rapport « par variante » les compare, et le HUD n'affiche que les statistiques de la variante jouee a la table. |
 | **Argent reel uniquement** | Les tables et tournois en argent fictif sont reconnus (PokerStars, Winamax, GGPoker, PartyPoker) et **exclus par defaut** de toutes les statistiques, rapports, courbes, du HUD et du bilan financier. Une case « Inclure l'argent fictif » permet de les réintégrer ponctuellement. |
 | **Replayer** | Rejeu action par action, table dessinee, mises, tapis, board, lecture automatique, **calcul d'equite** a l'etape courante (Monte-Carlo). |
 | **Rapports** | Statistiques croisees par position, limite, room, format, table, nombre de joueurs ; graphique de gains cumules (argent ou bb) ; decoupage automatique en sessions. |
@@ -205,8 +206,11 @@ Choix structurants :
 
 - **Compteurs par main, statistiques calculees a la volee.** Chaque main
   ecrit une ligne de compteurs par joueur ; une statistique n'est qu'un
-  rapport de sommes SQL. N'importe quel filtre (position, limite, format,
-  periode, nombre de joueurs) s'applique donc sans recalculer les mains.
+  rapport de sommes SQL. N'importe quel filtre (variante, position, limite,
+  format, periode, nombre de joueurs) s'applique donc sans recalculer les
+  mains.
+- **Les cumuls precalcules sont ranges par joueur et par variante**: filtrer
+  sur le Hold'em ou l'Omaha reste instantane, y compris pour le HUD.
 - **Le schema SQLite est genere** depuis la liste des compteurs : ajouter un
   compteur cree la colonne correspondante au demarrage suivant (migration
   automatique, sans perte).
@@ -260,14 +264,16 @@ Les rapports filtres, eux, interrogent le detail main par main.
 python -m pytest
 ```
 
-128 tests couvrent les parsers (dont les montants localises, les antes, les
+146 tests couvrent les parsers (dont les montants localises, les antes, les
 mains tronquees), le moteur de statistiques (3bet, squeeze, vol de blindes,
 c-bet, check-raise, probe, abattage), la base et ses filtres, l'import
 incremental, l'evaluateur et les equites de reference, les profils HUD et
 l'interface (en mode hors ecran), la coherence entre les cumuls precalcules
 et le recalcul complet, les gains ajustes a l'equite (valeurs exactes et
 conservation de l'argent), l'archivage, les resumes de tournoi, l'exclusion de
-l'argent fictif et le coach IA (client simule, sans appel reseau).
+l'argent fictif, la separation des variantes (Hold'em / Omaha, jusque dans
+les cumuls precalcules et le HUD) et le coach IA (client simule, sans appel
+reseau).
 
 ---
 

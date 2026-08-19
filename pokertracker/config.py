@@ -40,6 +40,11 @@ class Settings:
     hud_font_size: int = 11
     hud_follow_tables: bool = True
     hud_min_hands: int = 0
+    #: variante prise en compte par defaut ('' = toutes). Permet d'exclure
+    #: l'Omaha des statistiques calculees, par exemple.
+    default_game: str = ""
+    #: le HUD n'affiche que les statistiques de la variante jouee a la table
+    hud_filter_by_game: bool = True
     hero_names: List[str] = field(default_factory=list)
     ai_provider: str = "gemini"
     ai_api_keys: Dict[str, str] = field(default_factory=dict)
