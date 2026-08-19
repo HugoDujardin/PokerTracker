@@ -33,18 +33,24 @@ class Filter:
     stakes: Sequence[str] = ()
     positions: Sequence[str] = ()
     tables: Sequence[str] = ()
+    tournament_ids: Sequence[str] = ()
     date_from: Optional[datetime] = None
     date_to: Optional[datetime] = None
     min_players: Optional[int] = None
     max_players: Optional[int] = None
     hero_only: bool = False
     last_n_hands: Optional[int] = None
+    #: 'real' (defaut) exclut l'argent fictif, 'play' ne garde que lui,
+    #: 'all' ne filtre pas
+    money: str = "real"
 
     def is_empty(self) -> bool:
         """Aucun critere: les cumuls precalcules peuvent etre utilises."""
-        return not any((self.rooms, self.formats, self.games, self.stakes, self.positions,
-                        self.tables, self.date_from, self.date_to, self.min_players,
-                        self.max_players, self.hero_only, self.last_n_hands))
+        return self.money == "real" and not any(
+            (self.rooms, self.formats, self.games, self.stakes, self.positions, self.tables,
+             self.tournament_ids,
+             self.date_from, self.date_to, self.min_players, self.max_players, self.hero_only,
+             self.last_n_hands))
 
     def where(self) -> tuple[str, list]:
         clauses: list[str] = []
@@ -59,6 +65,7 @@ class Filter:
         inlist("h.stake", self.stakes)
         inlist("h.table_name", self.tables)
         inlist("hp.position", self.positions)
+        inlist("h.tournament_id", self.tournament_ids)
         if self.date_from:
             clauses.append("h.played_ts >= ?")
             params.append(self.date_from.timestamp())
@@ -73,6 +80,10 @@ class Filter:
             params.append(self.max_players)
         if self.hero_only:
             clauses.append("hp.is_hero = 1")
+        if self.money == "real":
+            clauses.append("h.real_money = 1")
+        elif self.money == "play":
+            clauses.append("h.real_money = 0")
         return (" AND ".join(clauses) if clauses else "1=1"), params
 
 
@@ -115,6 +126,12 @@ class Database:
             hands_cols = {r[1] for r in self.conn.execute("PRAGMA table_info(hands)")}
             if "imported_at" not in hands_cols:
                 self.conn.execute("ALTER TABLE hands ADD COLUMN imported_at TEXT")
+            if "real_money" not in hands_cols:
+                self.conn.execute("ALTER TABLE hands ADD COLUMN real_money INTEGER DEFAULT 1")
+            tour_cols = {r[1] for r in self.conn.execute("PRAGMA table_info(tournaments)")}
+            if tour_cols and "real_money" not in tour_cols:
+                self.conn.execute(
+                    "ALTER TABLE tournaments ADD COLUMN real_money INTEGER DEFAULT 1")
             existing = {r[1] for r in self.conn.execute("PRAGMA table_info(hand_players)")}
             for col in COUNTERS:
                 if col not in existing:
@@ -192,14 +209,15 @@ class Database:
                 cur = conn.execute(
                     """INSERT INTO hands(hand_id, room, played_at, played_ts, game, fmt, table_name,
                                          max_seats, nb_players, sb, bb, ante, currency, stake, board,
-                                         pot, rake, tournament_id, hero_id, file_id, imported_at,
-                                         raw_text)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                         pot, rake, tournament_id, real_money, hero_id, file_id,
+                                         imported_at, raw_text)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (hand.hand_id, hand.room, hand.played_at.isoformat(timespec="seconds"),
                      hand.played_at.timestamp(), hand.game.value, hand.table_format.value,
                      hand.table_name, hand.max_seats, hand.nb_players, float(hand.sb), float(hand.bb),
                      float(hand.ante), hand.currency, stake_label(hand), " ".join(hand.board),
-                     float(hand.pot), float(hand.rake), hand.tournament_id, hero_id, file_id,
+                     float(hand.pot), float(hand.rake), hand.tournament_id,
+                     int(hand.real_money), hero_id, file_id,
                      datetime.now().isoformat(timespec="seconds"), hand.raw_text),
                 )
                 db_hand_id = int(cur.lastrowid)
@@ -215,12 +233,15 @@ class Database:
                     counters_row = [row.get(c, 0) for c in counter_cols]
                     values += counters_row
                     rows.append(values)
-                    acc = totals.get(pid)
-                    if acc is None:
-                        totals[pid] = list(counters_row)
-                    else:
-                        for i, v in enumerate(counters_row):
-                            acc[i] += v
+                    if hand.real_money:
+                        # les cumuls precalcules (utilises par le HUD et les
+                        # ecrans sans filtre) ne comptent que l'argent reel
+                        acc = totals.get(pid)
+                        if acc is None:
+                            totals[pid] = list(counters_row)
+                        else:
+                            for i, v in enumerate(counters_row):
+                                acc[i] += v
                 conn.executemany(hp_sql, rows)
                 played = hand.played_at.isoformat(timespec="seconds")
                 tables_seen[(hand.room, hand.table_name)] = played
@@ -341,12 +362,14 @@ class Database:
     def rebuild_totals(self) -> None:
         """Recalcule integralement la table de cumuls (maintenance)."""
         cols = ", ".join(ALL_COUNTERS)
-        sums = ", ".join(f"SUM({c})" for c in ALL_COUNTERS)
+        sums = ", ".join(f"SUM(hp.{c})" for c in ALL_COUNTERS)
         with self._write_lock:
             self.conn.execute("DELETE FROM player_totals")
             self.conn.execute(
                 f"INSERT INTO player_totals(player_id, {cols}) "
-                f"SELECT player_id, {sums} FROM hand_players GROUP BY player_id")
+                f"SELECT hp.player_id, {sums} FROM hand_players hp "
+                f"JOIN hands h ON h.id = hp.hand_id WHERE h.real_money = 1 "
+                f"GROUP BY hp.player_id")
             self.conn.commit()
 
     def aggregate_many(self, names: Sequence[str], room: str = "",
@@ -391,6 +414,28 @@ class Database:
                f"FROM hands h JOIN hand_players hp ON h.id = hp.hand_id "
                f"WHERE {where} AND hp.player_id = ? ORDER BY h.played_ts DESC LIMIT ? OFFSET ?")
         return list(self.conn.execute(sql, params + [player_id, limit, offset]))
+
+    def tournament_hands(self, room: str, tournament_id: str,
+                         player_id: Optional[int] = None) -> list[sqlite3.Row]:
+        """Mains d'un tournoi, de la plus ancienne a la plus recente."""
+        if player_id is None:
+            return list(self.conn.execute(
+                "SELECT * FROM hands WHERE room = ? AND tournament_id = ? ORDER BY played_ts",
+                (room, tournament_id)))
+        return list(self.conn.execute(
+            "SELECT h.*, hp.position, hp.cards, hp.net, hp.bb_net, hp.stack_bb "
+            "FROM hands h JOIN hand_players hp ON hp.hand_id = h.id "
+            "WHERE h.room = ? AND h.tournament_id = ? AND hp.player_id = ? "
+            "ORDER BY h.played_ts", (room, tournament_id, player_id)))
+
+    def tournament_by_id(self, db_id: int) -> Optional[sqlite3.Row]:
+        return self.conn.execute(
+            f"SELECT t.*, {self.HANDS_SUBQUERY} AS hands_played FROM tournaments t WHERE t.id = ?",
+            (db_id,)).fetchone()
+
+    def last_tournament(self, flt: Optional[Filter] = None) -> Optional[sqlite3.Row]:
+        rows = self.tournaments(flt, limit=1)
+        return rows[0] if rows else None
 
     def hand_by_id(self, db_id: int) -> Optional[sqlite3.Row]:
         return self.conn.execute("SELECT * FROM hands WHERE id = ?", (db_id,)).fetchone()
@@ -478,14 +523,16 @@ class Database:
                     """INSERT OR IGNORE INTO tournaments(
                            room, tournament_id, name, fmt, buyin, fee, bounty_buyin, currency,
                            started_at, started_ts, entrants, finish_place, prize, bounty_won,
-                           cost, won, profit, itm, bubble, paid_places, imported_at, raw_text)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                           cost, won, profit, itm, bubble, paid_places, real_money,
+                           imported_at, raw_text)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (r.room, r.tournament_id, r.name, r.fmt, float(r.buyin), float(r.fee),
                      float(r.bounty_buyin), r.currency,
                      started.isoformat(timespec="seconds") if started else None,
                      started.timestamp() if started else 0.0,
                      r.entrants, r.finish_place, float(r.prize), float(r.bounty_won),
                      cost, won, won - cost, int(r.itm), int(bubble), paid,
+                     int(getattr(r, "real_money", True)),
                      datetime.now().isoformat(timespec="seconds"), r.raw_text))
                 if cur.rowcount:
                     inserted += 1
@@ -495,6 +542,8 @@ class Database:
     #: nombre de mains jouees dans le tournoi, calcule a la lecture
     HANDS_SUBQUERY = ("(SELECT COUNT(*) FROM hands h WHERE h.tournament_id = t.tournament_id "
                       "AND h.room = t.room)")
+
+    #: les tournois en argent fictif sont exclus du bilan financier par defaut
 
     def tournaments(self, flt: Optional[Filter] = None, limit: int = 2000) -> list[sqlite3.Row]:
         where, params = self._tournament_where(flt)
@@ -519,6 +568,10 @@ class Database:
         if flt.date_to:
             clauses.append("started_ts <= ?")
             params.append(flt.date_to.timestamp())
+        if flt.money == "real":
+            clauses.append("real_money = 1")
+        elif flt.money == "play":
+            clauses.append("real_money = 0")
         return (" AND ".join(clauses) if clauses else "1=1"), params
 
     def tournament_stats(self, flt: Optional[Filter] = None) -> dict:
@@ -618,9 +671,11 @@ class Database:
             cash = self.conn.execute(
                 "SELECT COALESCE(SUM(hp.net), 0) FROM hand_players hp "
                 "JOIN hands h ON h.id = hp.hand_id "
-                "WHERE hp.player_id = ? AND h.fmt = 'cash'", (hero_id,)).fetchone()[0] or 0.0
+                "WHERE hp.player_id = ? AND h.fmt = 'cash' AND h.real_money = 1",
+                (hero_id,)).fetchone()[0] or 0.0
         tournaments = self.conn.execute(
-            "SELECT COALESCE(SUM(profit), 0) FROM tournaments").fetchone()[0] or 0.0
+            "SELECT COALESCE(SUM(profit), 0) FROM tournaments "
+            "WHERE real_money = 1").fetchone()[0] or 0.0
         return {
             "movements": movements,
             "cash": cash,
@@ -634,13 +689,15 @@ class Database:
         for row in self.conn.execute("SELECT ts, kind, amount FROM bankroll_entries"):
             amount = -row["amount"] if row["kind"] == "retrait" else row["amount"]
             events.append((row["ts"], amount))
-        for row in self.conn.execute("SELECT started_ts, profit FROM tournaments"):
+        for row in self.conn.execute(
+                "SELECT started_ts, profit FROM tournaments WHERE real_money = 1"):
             events.append((row["started_ts"] or 0.0, row["profit"] or 0.0))
         if hero_id:
             for row in self.conn.execute(
                     "SELECT h.played_ts, hp.net FROM hand_players hp "
                     "JOIN hands h ON h.id = hp.hand_id "
-                    "WHERE hp.player_id = ? AND h.fmt = 'cash'", (hero_id,)):
+                    "WHERE hp.player_id = ? AND h.fmt = 'cash' AND h.real_money = 1",
+                    (hero_id,)):
                 events.append((row["played_ts"], row["net"] or 0.0))
         events.sort(key=lambda e: e[0])
         cumul = 0.0

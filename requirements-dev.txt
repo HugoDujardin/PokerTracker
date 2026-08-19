@@ -1,4 +1,4 @@
 -r requirements.txt
-anthropic>=0.60          # coach IA (facultatif a l'usage, requis pour les tests)
+anthropic>=0.60          # coach IA, fournisseur payant optionnel
 pytest>=8.0
 pyinstaller>=6.3

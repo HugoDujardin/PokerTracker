@@ -1,1 +1,2 @@
 PySide6-Essentials>=6.6
+google-genai>=1.0          # coach IA (offre gratuite Gemini)

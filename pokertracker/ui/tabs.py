@@ -47,6 +47,10 @@ class FilterBar(QWidget):
         self.date_to = QDateEdit()
         self.date_to.setCalendarPopup(True)
         self.date_to.setDate(datetime.now().date())
+        self.play_money = QCheckBox("Inclure l'argent fictif")
+        self.play_money.setToolTip("Par defaut, seules les tables et les tournois en argent "
+                                   "reel sont pris en compte.")
+        self.play_money.stateChanged.connect(self.changed)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         for label, widget in (("Room", self.room), ("Limite", self.stake), ("Format", self.fmt),
@@ -54,6 +58,7 @@ class FilterBar(QWidget):
                               ("Au", self.date_to)):
             layout.addWidget(QLabel(label))
             layout.addWidget(widget)
+        layout.addWidget(self.play_money)
         layout.addStretch(1)
         for widget in (self.room, self.stake, self.fmt, self.players):
             widget.currentIndexChanged.connect(self.changed)
@@ -92,6 +97,7 @@ class FilterBar(QWidget):
             flt.min_players = 7
         flt.date_from = datetime.combine(self.date_from.date().toPython(), datetime.min.time())
         flt.date_to = datetime.combine(self.date_to.date().toPython(), datetime.max.time())
+        flt.money = "all" if self.play_money.isChecked() else "real"
         return flt
 
 

@@ -159,6 +159,9 @@ class Hand:
     rake: Decimal = Decimal(0)
     tournament_id: str = ""
     buyin: Decimal = Decimal(0)
+    #: False pour les tables et tournois en argent fictif (exclus par defaut
+    #: des statistiques, des rapports et du suivi financier)
+    real_money: bool = True
     raw_text: str = ""
 
     # ------------------------------------------------------------------ utils

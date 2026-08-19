@@ -121,9 +121,14 @@ class PokerStarsParser(HandParser):
             hand.tournament_id = m.group("tid")
             hand.buyin = parse_buyin(m.group("buyin"))
             hand.currency = "CHIPS"
+            hand.real_money = "play money" not in m.group("buyin").lower()
         else:
             cur = re.search(r"\b(USD|EUR|GBP|CAD)\b", m.group(0))
             hand.currency = cur.group(1) if cur else "USD"
+            # une table en argent reel affiche toujours une devise
+            hand.real_money = bool(cur or re.search(r"[$€£]", m.group(0)))
+        if re.search(r"\(play money\)|play money", block[:400], re.I):
+            hand.real_money = False
 
         t = RE_TABLE.search(block)
         if t:

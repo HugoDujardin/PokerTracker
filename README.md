@@ -28,7 +28,8 @@ d'ou l'echantillon reduit (666 mains contre 4000).*
 | **Gains ajustes (all-in EV)** | Les mains dont le tapis part avant la riviere sont rejouees mathematiquement: la part du pot due a l'equite remplace le resultat tire au sort. Seconde courbe sur le graphique, statistiques `bb/100 ajuste` et `Chance (bb)`. Enumeration exacte au flop et au turn, Monte-Carlo preflop. |
 | **Tournois** | Lecture des resumes de tournoi (PokerStars, Winamax): buy-in, primes, entrants, place, gains. Bilan par periode et par format: inscriptions, ITM, **bulles**, ROI, profit, victoires, place moyenne, buy-in moyen. |
 | **Bankroll** | Depots, retraits et ajustements; bankroll = mouvements + resultats cash + resultats tournois, avec courbe d'evolution. |
-| **Coach IA** | Analyse d'un coup precis (street par street, avec equite a chaque etape et stats des adversaires) ou des statistiques d'un joueur (fuites principales et ajustements). Reponse en direct, contexte affiche avant tout envoi. Necessite une cle d'API Anthropic. |
+| **Coach IA (gratuit)** | Analyses en un clic: **dernier tournoi**, **tournoi choisi dans la liste**, **dernier coup joue**, **coup affiche dans le replayer**, **statistiques du joueur**. Fonctionne avec l'offre gratuite de **Google Gemini** (cle AI Studio, sans carte bancaire); Anthropic reste disponible pour qui a deja une cle. Reponse en direct, donnees envoyees consultables. |
+| **Argent reel uniquement** | Les tables et tournois en argent fictif sont reconnus (PokerStars, Winamax, GGPoker, PartyPoker) et **exclus par defaut** de toutes les statistiques, rapports, courbes, du HUD et du bilan financier. Une case « Inclure l'argent fictif » permet de les réintégrer ponctuellement. |
 | **Replayer** | Rejeu action par action, table dessinee, mises, tapis, board, lecture automatique, **calcul d'equite** a l'etape courante (Monte-Carlo). |
 | **Rapports** | Statistiques croisees par position, limite, room, format, table, nombre de joueurs ; graphique de gains cumules (argent ou bb) ; decoupage automatique en sessions. |
 | **Joueurs** | Recherche, tableau comparatif, statistiques par position, notes, etiquettes et couleurs reprises dans le HUD. |
@@ -73,16 +74,21 @@ python run.py
 
 Python 3.10 ou plus recent est requis (teste avec 3.11).
 
-L'onglet Coach IA a besoin d'une dependance supplementaire et d'une cle
-d'API Anthropic:
+### Coach IA — cle gratuite
 
-```powershell
-pip install anthropic
-setx ANTHROPIC_API_KEY "votre-cle"    # ou saisie directement dans l'onglet
-```
+L'onglet Coach IA utilise par defaut **Google Gemini**, dont l'offre gratuite
+suffit a l'usage (quotas par minute et par jour, sans carte bancaire) :
 
-Le reste du logiciel fonctionne sans, et **aucune donnee n'est envoyee tant
-qu'une analyse n'est pas lancee**.
+1. creer une cle sur <https://aistudio.google.com/apikey> ;
+2. la coller dans l'onglet **Coach IA → Reglages de l'assistant** (ou definir
+   la variable d'environnement `GEMINI_API_KEY`).
+
+La bibliotheque necessaire (`google-genai`) est installee avec les
+dependances. Pour utiliser Claude a la place, `pip install anthropic` puis
+choisir « Anthropic Claude » dans la liste des fournisseurs.
+
+**Aucune donnee n'est envoyee tant qu'une analyse n'est pas lancee**, et le
+bouton « Voir les donnees envoyees » affiche exactement ce qui part.
 
 ---
 
@@ -115,6 +121,25 @@ python run.py --import "D:\HandHistory"
 python run.py --no-hud          # demarrer sans HUD
 python run.py --db D:\poker.db  # base a un autre emplacement
 ```
+
+---
+
+## Le coach IA en un clic
+
+Onglet **Coach IA**, une rangee de boutons :
+
+| Bouton | Ce qui est analyse |
+|---|---|
+| Analyser le dernier tournoi | Resultat, buy-in, place, ROI, statistiques du tournoi et **coups marquants** (plus gros pots + derniere main) |
+| Analyser ce tournoi | Le tournoi choisi dans la liste deroulante (date, nom, place, profit) |
+| Analyser le dernier coup joue | La derniere main du heros |
+| Analyser le coup affiche | La main ouverte dans le replayer (onglet Mains) |
+| Analyser mes statistiques | Les statistiques du joueur choisi, avec le detail par position |
+
+Le champ « question precise » est facultatif : rempli, il remplace la
+question par defaut (« fallait-il payer la river ? »). Les reglages
+(fournisseur, cle, modele, analyse approfondie) sont replies une fois la cle
+saisie.
 
 ---
 
@@ -235,14 +260,14 @@ Les rapports filtres, eux, interrogent le detail main par main.
 python -m pytest
 ```
 
-111 tests couvrent les parsers (dont les montants localises, les antes, les
+128 tests couvrent les parsers (dont les montants localises, les antes, les
 mains tronquees), le moteur de statistiques (3bet, squeeze, vol de blindes,
 c-bet, check-raise, probe, abattage), la base et ses filtres, l'import
 incremental, l'evaluateur et les equites de reference, les profils HUD et
 l'interface (en mode hors ecran), la coherence entre les cumuls precalcules
 et le recalcul complet, les gains ajustes a l'equite (valeurs exactes et
-conservation de l'argent), l'archivage, les resumes de tournoi et le coach
-IA (avec un client simule, sans appel reseau).
+conservation de l'argent), l'archivage, les resumes de tournoi, l'exclusion de
+l'argent fictif et le coach IA (client simule, sans appel reseau).
 
 ---
 
@@ -263,9 +288,14 @@ IA (avec un client simule, sans appel reseau).
   mains de tournoi sont bien importees mais le bilan financier reste vide.
   Les rooms n'indiquant pas le nombre de places payees, la **bulle** est
   estimee a partir de la part du champ payee (15 % par defaut).
-- Le coach IA envoie a l'API Anthropic la main ou les statistiques
-  selectionnees (affichees a l'ecran avant l'envoi). Rien d'autre ne sort de
-  la machine, et l'onglet reste inactif sans cle d'API.
+- Le coach IA envoie au fournisseur choisi (Gemini par defaut) uniquement la
+  main, le tournoi ou les statistiques de l'analyse demandee. Rien d'autre ne
+  sort de la machine, et l'onglet reste inactif sans cle d'API. L'offre
+  gratuite de Gemini impose des quotas: en cas de depassement, le message
+  l'indique et il suffit d'attendre ou de choisir un modele plus leger.
+- La detection de l'argent fictif s'appuie sur ce qu'ecrit la room (absence
+  de devise, mention « play money »). Une room au format inhabituel pourrait
+  demander un ajustement du parser concerne.
 - Omaha est parse et stocke, mais les statistiques sont pensees pour le
   Hold'em ; l'evaluateur d'equite choisit les 5 meilleures cartes sans
   appliquer la contrainte « 2 cartes en main » du PLO.

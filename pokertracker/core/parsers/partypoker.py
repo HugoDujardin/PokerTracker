@@ -19,7 +19,7 @@ RE_STAKES = re.compile(
     re.M | re.I,
 )
 RE_TOURNEY = re.compile(r"Tournament\s+#?(?P<tid>\d+)", re.I)
-RE_TABLE = re.compile(r"^Table\s+(?P<name>.+?)\s*\((?:Real|Play) Money\)", re.M | re.I)
+RE_TABLE = re.compile(r"^Table\s+(?P<name>.+?)\s*\((?P<money>Real|Play) Money\)", re.M | re.I)
 RE_BUTTON = re.compile(r"^Seat\s+(?P<btn>\d+)\s+is\s+the\s+button", re.M | re.I)
 RE_MAX = re.compile(r"Total number of players\s*:\s*\d+\s*/?\s*(?P<max>\d+)?", re.I)
 RE_SEAT = re.compile(r"^Seat\s+(?P<no>\d+):\s+(?P<name>.+?)\s+\(\s*(?P<stack>[^)]+?)\s*\)\s*$", re.M)
@@ -77,6 +77,7 @@ class PartyPokerParser(HandParser):
         t = RE_TABLE.search(block)
         if t:
             hand.table_name = t.group("name").strip()
+            hand.real_money = t.group("money").lower() == "real"
         b = RE_BUTTON.search(block)
         if b:
             hand.button_seat = int(b.group("btn"))

@@ -41,9 +41,11 @@ class Settings:
     hud_follow_tables: bool = True
     hud_min_hands: int = 0
     hero_names: List[str] = field(default_factory=list)
-    ai_api_key: str = ""
-    ai_model: str = "claude-opus-5"
-    ai_effort: str = "high"
+    ai_provider: str = "gemini"
+    ai_api_keys: Dict[str, str] = field(default_factory=dict)
+    ai_model: str = ""
+    ai_deep_analysis: bool = True
+    ai_api_key: str = ""                 # ancien reglage, repris automatiquement
     theme: str = "dark"
     language: str = "fr"
     default_currency: str = "EUR"
@@ -72,7 +74,17 @@ class Settings:
             settings.db_path = str(app_dir() / "pokertracker.db")
         if not settings.archive_dir:
             settings.archive_dir = str(app_dir() / "archive")
+        if settings.ai_api_key and "anthropic" not in settings.ai_api_keys:
+            # migration de l'ancien reglage (cle Anthropic unique)
+            settings.ai_api_keys["anthropic"] = settings.ai_api_key
+            settings.ai_api_key = ""
         return settings
+
+    def ai_key(self, provider: str) -> str:
+        return self.ai_api_keys.get(provider, "")
+
+    def set_ai_key(self, provider: str, key: str) -> None:
+        self.ai_api_keys[provider] = key
 
     def effective_archive_dir(self) -> str:
         """Dossier d'archive, ou une chaine vide si l'archivage est desactive."""

@@ -19,10 +19,7 @@ from typing import Callable, Dict, Iterable, List, Optional, Sequence
 from ..core.equity.equity import equity, pot_odds
 from ..core.models import Action, ActionType, Hand, Street
 from ..core.stats import definitions as sd
-
-#: modele par defaut (le plus capable de la famille Claude 5)
-DEFAULT_MODEL = "claude-opus-5"
-EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"]
+from .providers import DEFAULT_PROVIDER, ProviderConfig, ProviderError, get_provider
 
 SYSTEM_PROMPT = """Tu es un coach de poker expert (No Limit Hold'em et Omaha), \
 qui s'adresse a un joueur en francais.
@@ -51,16 +48,25 @@ class CoachError(RuntimeError):
     """Erreur d'appel a l'assistant (cle manquante, reseau, quota...)."""
 
 
+#: conserve pour compatibilite avec les anciens reglages
+EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"]
+
+
 @dataclass
 class CoachConfig:
+    provider: str = DEFAULT_PROVIDER
     api_key: str = ""
-    model: str = DEFAULT_MODEL
-    effort: str = "high"
-    max_tokens: int = 16000
-    temperature: Optional[float] = None      # non utilise par les modeles Claude 5
+    model: str = ""
+    deep_analysis: bool = True
+    max_tokens: int = 4096
 
-    def resolved_key(self) -> str:
-        return self.api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+    def provider_impl(self):
+        return get_provider(self.provider)
+
+    def to_provider_config(self) -> ProviderConfig:
+        impl = self.provider_impl()
+        return ProviderConfig(api_key=self.api_key, model=self.model or impl.default_model,
+                              deep_analysis=self.deep_analysis, max_tokens=self.max_tokens)
 
 
 # ---------------------------------------------------------------------------
@@ -202,72 +208,35 @@ def stats_question(question: str = "") -> str:
 # ---------------------------------------------------------------------------
 
 class PokerCoach:
-    """Client de l'assistant, base sur le SDK officiel Anthropic."""
+    """Envoie un contexte au modele choisi et restitue l'analyse."""
 
-    def __init__(self, config: Optional[CoachConfig] = None, client=None) -> None:
+    def __init__(self, config: Optional[CoachConfig] = None, provider=None) -> None:
         self.config = config or CoachConfig()
-        self._client = client            # injectable pour les tests
+        self._provider = provider        # injectable pour les tests
 
     # ------------------------------------------------------------------
+    def provider(self):
+        return self._provider or self.config.provider_impl()
+
     def available(self) -> tuple[bool, str]:
         """(pret, raison) — permet a l'interface d'expliquer ce qui manque."""
-        try:
-            import anthropic  # noqa: F401
-        except ImportError:
-            return False, ("Le module « anthropic » n'est pas installe. "
-                           "Lancez: pip install anthropic")
-        if not self.config.resolved_key():
-            return False, ("Aucune cle d'API. Renseignez-la dans l'onglet Coach IA ou "
-                           "definissez la variable d'environnement ANTHROPIC_API_KEY.")
-        return True, ""
+        return self.provider().available(self.config.to_provider_config())
 
-    def client(self):
-        if self._client is not None:
-            return self._client
-        ok, reason = self.available()
-        if not ok:
-            raise CoachError(reason)
-        import anthropic
+    def models(self) -> list:
+        provider = self.provider()
+        lister = getattr(provider, "list_models", None)
+        return lister(self.config.to_provider_config()) if lister else list(provider.models)
 
-        self._client = anthropic.Anthropic(api_key=self.config.resolved_key())
-        return self._client
-
-    # ------------------------------------------------------------------
     def ask(self, context: str, question: str,
             on_chunk: Optional[Callable[[str], None]] = None,
             stop: Optional[Callable[[], bool]] = None) -> str:
-        """Envoie le contexte et la question, en streaming.
-
-        `on_chunk` recoit le texte au fil de l'eau (affichage progressif),
-        `stop` permet d'interrompre depuis l'interface.
-        """
-        client = self.client()
+        """Envoie le contexte et la question, en streaming."""
         prompt = f"{context}\n\n---\n\n{question}"
-        pieces: List[str] = []
         try:
-            with client.messages.stream(
-                model=self.config.model,
-                max_tokens=self.config.max_tokens,
-                system=SYSTEM_PROMPT,
-                thinking={"type": "adaptive"},
-                output_config={"effort": self.config.effort},
-                messages=[{"role": "user", "content": prompt}],
-            ) as stream:
-                for text in stream.text_stream:
-                    pieces.append(text)
-                    if on_chunk:
-                        on_chunk(text)
-                    if stop and stop():
-                        break
-                else:
-                    final = stream.get_final_message()
-                    if final.stop_reason == "refusal":
-                        raise CoachError("Le modele a refuse de repondre a cette demande.")
-        except CoachError:
-            raise
-        except Exception as exc:                      # erreurs reseau, quota, cle invalide
-            raise CoachError(f"Appel a l'assistant impossible: {exc}") from exc
-        return "".join(pieces)
+            return self.provider().stream(self.config.to_provider_config(), SYSTEM_PROMPT,
+                                          prompt, on_chunk=on_chunk, stop=stop)
+        except ProviderError as exc:
+            raise CoachError(str(exc)) from exc
 
     # ------------------------------------------------------------------
     def analyse_hand(self, hand: Hand, stats: Optional[Dict[str, dict]] = None,

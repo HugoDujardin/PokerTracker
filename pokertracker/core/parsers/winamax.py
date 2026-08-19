@@ -83,6 +83,7 @@ class WinamaxParser(HandParser):
             hand.table_name = t.group("name")
             hand.max_seats = int(t.group("max"))
             hand.button_seat = int(t.group("btn"))
+        hand.real_money = not re.search(r"\(play money\)", block[:400], re.I)
 
         summary_at = RE_SUMMARY.search(block)
         seats_zone = block[: summary_at.start()] if summary_at else block

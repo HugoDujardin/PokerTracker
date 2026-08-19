@@ -32,6 +32,7 @@ class TournamentResult:
     prize: Decimal = Decimal(0)
     bounty_won: Decimal = Decimal(0)
     fmt: str = "mtt"
+    real_money: bool = True
     raw_text: str = ""
 
     @property
@@ -151,6 +152,7 @@ class PokerStarsSummary(SummaryParser):
                 break
         if "Sit & Go" in block or "STT" in block:
             result.fmt = "sng"
+        result.real_money = "play money" not in block.lower()
         return result
 
 
@@ -208,6 +210,7 @@ class WinamaxSummary(SummaryParser):
         bounty = self.RE_BOUNTY.search(block)
         if bounty:
             result.bounty_won = to_decimal(bounty.group(1))
+        result.real_money = "play money" not in block.lower() and "€" in block
         low = name.lower()
         if "expresso" in low or "spin" in low:
             result.fmt = "spin"

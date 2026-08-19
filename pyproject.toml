@@ -8,10 +8,10 @@ version = "1.0.0"
 description = "Suivi de mains, statistiques et HUD temps reel pour le poker en ligne (Windows 11)"
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["PySide6-Essentials>=6.6"]
+dependencies = ["PySide6-Essentials>=6.6", "google-genai>=1.0"]
 
 [project.optional-dependencies]
-ia = ["anthropic>=0.60"]                 # onglet « Coach IA »
+anthropic = ["anthropic>=0.60"]          # fournisseur payant optionnel du coach
 dev = ["anthropic>=0.60", "pytest>=8.0", "pyinstaller>=6.3"]
 
 [project.scripts]

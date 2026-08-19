@@ -126,6 +126,13 @@ Exemple fourni par défaut (profil `Cash 6-max`) :
 | Défense des blindes | position SB ou BB | statistiques **filtrées sur la position** |
 | Principal | toujours vrai | affichage standard |
 
+## Argent réel uniquement
+
+Par défaut, le HUD (comme le reste du logiciel) ne compte que les mains
+jouées en **argent réel** : les tables en argent fictif sont reconnues et
+écartées. Pour les inclure ponctuellement dans les rapports, cochez
+« Inclure l'argent fictif » dans la barre de filtres de l'onglet concerné.
+
 ## Réglages généraux
 
 - **Opacité** : transparence des panneaux (0,2 à 1).
