@@ -94,3 +94,34 @@ def test_main_incomplete_non_consommee(data_dir):
     tronque = text[: text.index("*** SUMMARY ***", text.index("241234567891"))]
     assert parser.complete_length(tronque) < len(tronque)
     assert parser.complete_length(text + "\n\n") >= len(text)
+
+
+def test_date_localisee_et_non_date_d_import(data_dir):
+    """Une date en francais doit etre lue, jamais remplacee par aujourd'hui."""
+    from datetime import datetime
+    text = (data_dir / "partypoker_cash.txt").read_text(encoding="utf-8")
+    francais = text.replace("Monday, January 15, 20:31:05 CET 2024",
+                            "lundi, janvier 15, 20:31:05 CET 2024")
+    hands = list(registry.parse_text(francais))
+    assert len(hands) == 1
+    assert hands[0].played_at == datetime(2024, 1, 15, 20, 31, 5)
+
+
+def test_date_illisible_rejetee(data_dir):
+    """Plutot que de dater la main du jour de l'import, elle est refusee."""
+    text = (data_dir / "partypoker_cash.txt").read_text(encoding="utf-8")
+    casse = text.replace("Monday, January 15, 20:31:05 CET 2024", "date inconnue")
+    assert list(registry.parse_text(casse)) == []
+
+
+def test_formats_de_date():
+    from datetime import datetime
+    from pokertracker.core.parsers.dates import parse_datetime
+    attendu = datetime(2024, 1, 15, 20, 31, 5)
+    for texte in ("2024/01/15 20:31:05", "15/01/2024 20:31:05",
+                  "Monday, January 15, 20:31:05 CET 2024",
+                  "lundi, janvier 15, 20:31:05 CET 2024",
+                  "lundi 15 janvier 2024 20:31:05",
+                  "Montag, Januar 15, 20:31:05 CET 2024"):
+        assert parse_datetime(texte) == attendu, texte
+    assert parse_datetime("n'importe quoi") is None

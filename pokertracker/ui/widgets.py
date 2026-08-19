@@ -19,25 +19,43 @@ LINE_COLOR_2 = "#f0a848"
 
 
 class WinningsGraph(QWidget):
-    """Courbe de gains cumules (argent et grosses blindes)."""
+    """Courbe de gains cumules.
+
+    Deux series sont tracees: les gains reels et les gains ajustes a
+    l'equite des all-in (« bb ajustees »), dont l'ecart mesure la chance.
+    """
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        self.points: List[Tuple[int, float, float]] = []      # (main, cumul argent, cumul bb)
-        self.currency = "€"
+        #: (numero de main, cumul argent, cumul bb, cumul EV argent, cumul EV bb)
+        self.points: List[Tuple[int, float, float, float, float]] = []
+        self.currency = "EUR"
         self.show_bb = True
+        self.show_ev = True
         self.setMinimumHeight(220)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-    def set_curve(self, curve: Sequence[Tuple[int, float, float, float]], currency: str = "€") -> None:
-        self.points = [(int(i), float(money), float(bb)) for i, _ts, money, bb in curve]
+    def set_curve(self, curve: Sequence[Tuple], currency: str = "EUR") -> None:
+        self.points = []
+        for row in curve:
+            index, _ts, money, bb = row[0], row[1], row[2], row[3]
+            ev_money = row[4] if len(row) > 4 else money
+            ev_bb = row[5] if len(row) > 5 else bb
+            self.points.append((int(index), float(money), float(bb), float(ev_money),
+                                float(ev_bb)))
         self.currency = currency
         self.update()
+
+    # ------------------------------------------------------------------
+    def _series(self) -> Tuple[List[float], List[float]]:
+        if self.show_bb:
+            return [p[2] for p in self.points], [p[4] for p in self.points]
+        return [p[1] for p in self.points], [p[3] for p in self.points]
 
     def paintEvent(self, event) -> None:  # pragma: no cover - rendu
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-        rect = self.rect().adjusted(48, 12, -12, -24)
+        rect = self.rect().adjusted(56, 26, -12, -24)
         painter.fillRect(self.rect(), QColor(DARK_BG))
         painter.setPen(QPen(QColor(GRID_COLOR), 1))
         for i in range(5):
@@ -48,10 +66,11 @@ class WinningsGraph(QWidget):
             painter.drawText(self.rect(), Qt.AlignCenter, "Pas encore de donnees")
             return
 
-        values = [p[2] if self.show_bb else p[1] for p in self.points]
-        vmin, vmax = min(values + [0.0]), max(values + [0.0])
+        real, adjusted = self._series()
+        shown = real + (adjusted if self.show_ev else [])
+        vmin, vmax = min(shown + [0.0]), max(shown + [0.0])
         span = (vmax - vmin) or 1.0
-        n = len(values)
+        n = len(real)
 
         def to_xy(i: int, v: float) -> QPointF:
             x = rect.left() + rect.width() * i / max(1, n - 1)
@@ -62,11 +81,11 @@ class WinningsGraph(QWidget):
         painter.setPen(QPen(QColor("#556070"), 1, Qt.DashLine))
         painter.drawLine(QPointF(rect.left(), zero_y), QPointF(rect.right(), zero_y))
 
-        poly = QPolygonF([to_xy(i, v) for i, v in enumerate(values)])
+        poly = QPolygonF([to_xy(i, v) for i, v in enumerate(real)])
         area = QPolygonF(poly)
         area.append(QPointF(rect.right(), zero_y))
         area.append(QPointF(rect.left(), zero_y))
-        color = QColor(LINE_COLOR if values[-1] >= 0 else "#ff6b6b")
+        color = QColor(LINE_COLOR if real[-1] >= 0 else "#ff6b6b")
         fill = QColor(color)
         fill.setAlpha(48)
         painter.setBrush(QBrush(fill))
@@ -76,18 +95,37 @@ class WinningsGraph(QWidget):
         painter.setPen(QPen(color, 2))
         painter.drawPolyline(poly)
 
+        if self.show_ev:
+            ev_poly = QPolygonF([to_xy(i, v) for i, v in enumerate(adjusted)])
+            painter.setPen(QPen(QColor(LINE_COLOR_2), 2, Qt.DashLine))
+            painter.drawPolyline(ev_poly)
+
+        unit = "bb" if self.show_bb else self.currency
         painter.setPen(QColor("#93a3b5"))
         painter.setFont(QFont("Segoe UI", 8))
-        unit = "bb" if self.show_bb else self.currency
         for i in range(5):
             v = vmax - i * span / 4
             y = rect.top() + i * rect.height() / 4
-            painter.drawText(QRectF(0, y - 8, 44, 16), Qt.AlignRight | Qt.AlignVCenter,
-                             f"{v:,.0f}{unit}")
+            painter.drawText(QRectF(0, y - 8, 50, 16), Qt.AlignRight | Qt.AlignVCenter,
+                             f"{v:,.0f}")
         painter.drawText(QRectF(rect.left(), rect.bottom() + 4, rect.width(), 18),
                          Qt.AlignLeft, "1 main")
         painter.drawText(QRectF(rect.left(), rect.bottom() + 4, rect.width(), 18),
                          Qt.AlignRight, f"{n} mains")
+
+        # legende
+        painter.setPen(QPen(color, 2))
+        painter.drawLine(rect.left(), rect.top() - 14, rect.left() + 22, rect.top() - 14)
+        painter.setPen(QColor("#c3ccd8"))
+        painter.drawText(QRectF(rect.left() + 28, rect.top() - 23, 160, 18),
+                         Qt.AlignLeft | Qt.AlignVCenter, f"Gains reels ({unit})")
+        if self.show_ev:
+            painter.setPen(QPen(QColor(LINE_COLOR_2), 2, Qt.DashLine))
+            painter.drawLine(rect.left() + 190, rect.top() - 14, rect.left() + 212, rect.top() - 14)
+            painter.setPen(QColor("#c3ccd8"))
+            painter.drawText(QRectF(rect.left() + 218, rect.top() - 23, 260, 18),
+                             Qt.AlignLeft | Qt.AlignVCenter,
+                             f"Ajustes a l'equite des all-in ({unit})")
 
 
 class RangeGrid(QWidget):

@@ -20,8 +20,10 @@ from .importer import Importer
 class HandHistoryWatcher:
     """Boucle de scrutation (compatible Windows 11: aucune API specifique)."""
 
-    def __init__(self, db: Database, folders: Sequence[str] = (), interval: float = 1.0) -> None:
+    def __init__(self, db: Database, folders: Sequence[str] = (), interval: float = 1.0,
+                 archive_dir: Optional[str] = None) -> None:
         self.db = db
+        self.archive_dir = archive_dir
         self.folders: list[str] = [str(f) for f in folders]
         self.interval = interval
         self._thread: Optional[threading.Thread] = None
@@ -79,7 +81,7 @@ class HandHistoryWatcher:
 
     def scan_once(self) -> int:
         """Un tour de scrutation. Retourne le nombre de mains importees."""
-        importer = Importer(self.db, on_hands=self._dispatch)
+        importer = Importer(self.db, on_hands=self._dispatch, archive_dir=self.archive_dir)
         total = 0
         with self._lock:
             folders = list(self.folders)

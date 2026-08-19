@@ -131,6 +131,8 @@ class HudManager:
         self.tracker = tracker or TableTracker()
         self.min_hands = min_hands
         self.tables: Dict[str, TableState] = {}
+        #: affiche la derniere table connue quand une fenetre n'est pas reconnue
+        self.fallback_to_last_table = True
         self._stats_cache: Dict[Tuple[str, str, str], dict] = {}
         self._lock = threading.RLock()
 
@@ -147,6 +149,24 @@ class HudManager:
                 for seat in hand.seats:                 # les stats du joueur ont change
                     self._stats_cache.pop((seat.player, hand.room, "all"), None)
                     self._stats_cache.pop((seat.player, hand.room, seat.position), None)
+
+    def restore_recent_tables(self, limit: int = 12) -> int:
+        """Reconstruit l'etat des dernieres tables jouees depuis la base.
+
+        Appele au demarrage: sans cela, le HUD reste vide tant qu'aucune
+        nouvelle main n'a ete importee.
+        """
+        from ..core.parsers import registry
+        restored = 0
+        for row in self.db.recent_table_hands(limit):
+            raw = row["raw_text"] or ""
+            if not raw:
+                continue
+            hands = list(registry.parse_text(raw))
+            if hands:
+                self.on_new_hands(hands[:1])
+                restored += 1
+        return restored
 
     @staticmethod
     def table_key(room: str, table_name: str) -> str:
@@ -236,6 +256,10 @@ class HudManager:
                     return same_room[0]
             if len(self.tables) == 1:
                 return next(iter(self.tables.values()))
+            if self.fallback_to_last_table and self.tables:
+                # aucune correspondance: on affiche la derniere table connue
+                # (utile pour la table de demonstration et au demarrage)
+                return max(self.tables.values(), key=lambda s: s.updated_at)
             return None
 
     def snapshot(self) -> List[TableHud]:

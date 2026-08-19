@@ -95,6 +95,16 @@ STATS: list[StatDef] = [
             description="Gain net cumule dans la devise de la table."),
     StatDef("wr_hands", "% mains gagnees", "hands_won", "hands", "General",
             description="Pourcentage de mains remportees."),
+    StatDef("ev_bb100", "bb/100 ajuste", "ev_bb", "hands", "General", "bb100", 1,
+            description="Gain en bb/100 ajuste a l'equite: les all-in sont remplaces par "
+                        "leur esperance mathematique."),
+    StatDef("ev_net", "Gains ajustes", "ev_net", "hands", "General", "money",
+            description="Gain net ajuste a l'equite des all-in."),
+    StatDef("luck_bb", "Ecart chance (bb)", "bb_net", "hands", "General", "money", 1,
+            description="Reste informatif: comparer 'Gains' et 'Gains ajustes' donne la "
+                        "chance sur la periode."),
+    StatDef("allin_ev_hands", "Mains all-in evaluees", "allin_ev_hands", "hands", "General",
+            "int", description="Nombre de mains dont le resultat a ete ajuste a l'equite."),
     # ------------------------------------------------------------- preflop
     StatDef("vpip", "VPIP", "vpip", "vpip_opp", "Preflop",
             description="Voluntarily Put money In Pot: frequence d'entree volontaire dans le pot.",

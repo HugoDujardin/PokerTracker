@@ -31,6 +31,8 @@ class Settings:
     db_path: str = ""
     hh_folders: List[str] = field(default_factory=list)
     auto_import: bool = True
+    archive_enabled: bool = True
+    archive_dir: str = ""
     scan_interval: float = 1.0
     hud_enabled: bool = True
     hud_profile: str = "Cash 6-max"
@@ -65,7 +67,13 @@ class Settings:
         settings = cls(**{k: v for k, v in data.items() if k in known})
         if not settings.db_path:
             settings.db_path = str(app_dir() / "pokertracker.db")
+        if not settings.archive_dir:
+            settings.archive_dir = str(app_dir() / "archive")
         return settings
+
+    def effective_archive_dir(self) -> str:
+        """Dossier d'archive, ou une chaine vide si l'archivage est desactive."""
+        return self.archive_dir if self.archive_enabled else ""
 
     def save(self) -> None:
         self.path().write_text(json.dumps(asdict(self), indent=2, ensure_ascii=False),

@@ -8,7 +8,8 @@ from typing import Dict, List, Optional
 
 from PySide6.QtCore import QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPen
-from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QComboBox, QHBoxLayout, QLabel, QPushButton, QSizePolicy,
+                               QVBoxLayout, QWidget)
 
 from ..core.equity.cards import CARD_COLORS, SUIT_COLORS, SUIT_SYMBOLS
 from ..core.equity.equity import equity
@@ -201,6 +202,7 @@ class Replayer(QWidget):
         self.canvas = TableCanvas(self)
         self.info = QLabel("")
         self.info.setStyleSheet("color:#c8d2de; padding:4px;")
+        self.info.setWordWrap(True)
         self.history = QLabel("")
         self.history.setStyleSheet("color:#8b97a6; padding:2px 6px;")
         self.history.setWordWrap(True)
@@ -212,10 +214,11 @@ class Replayer(QWidget):
         self.btn_next = QPushButton(">")
         self.btn_last = QPushButton(">|")
         self.btn_equity = QPushButton("Calculer l'equite")
-        self.btn_play.setFixedWidth(88)
         for b in (self.btn_first, self.btn_prev, self.btn_play, self.btn_next, self.btn_last):
-            if b is not self.btn_play:
-                b.setFixedWidth(52)
+            # largeur deduite du texte: rien n'est jamais tronque, quelle que
+            # soit la police ou la mise a l'echelle de l'ecran
+            b.setMinimumWidth(b.fontMetrics().horizontalAdvance(b.text()) + 28)
+            b.setSizePolicy(QSizePolicy.Minimum, QSizePolicy.Fixed)
             controls.addWidget(b)
         controls.addWidget(self.btn_equity)
         controls.addStretch(1)

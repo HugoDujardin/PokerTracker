@@ -4,6 +4,7 @@ import shutil
 import time
 
 from conftest import DATA
+from pokertracker.core.db import Database
 from pokertracker.core.importer import Importer, HandHistoryWatcher, detect_hh_directories
 
 
@@ -76,9 +77,12 @@ def test_watcher_thread(db, tmp_path):
     watcher.start()
     try:
         assert watcher.running
-        shutil.copy(DATA / "ggpoker_cash.txt", tmp_path / "gg.txt")
+        # ecriture atomique: le watcher ne doit pas lire un fichier a moitie copie
+        shutil.copy(DATA / "ggpoker_cash.txt", tmp_path / "gg.part")
+        _stable(tmp_path / "gg.part")
+        os.replace(tmp_path / "gg.part", tmp_path / "gg.txt")
         _stable(tmp_path / "gg.txt")
-        for _ in range(40):
+        for _ in range(200):
             if db.counts()["hands"]:
                 break
             time.sleep(0.05)
@@ -96,3 +100,41 @@ def test_fichier_non_reconnu(db, tmp_path):
 
 def test_detection_dossiers_ne_plante_pas():
     assert isinstance(detect_hh_directories(), dict)
+
+
+def test_archivage_des_historiques(db, tmp_path):
+    """L'archive doit permettre de tout reimporter apres purge par la room."""
+    source = tmp_path / "hh" / "HH.txt"
+    source.parent.mkdir()
+    shutil.copy(DATA / "pokerstars_cash.txt", source)
+    _stable(source)
+    archive = tmp_path / "archive"
+    importer = Importer(db, archive_dir=archive)
+    result = importer.import_file(source)
+    assert result.hands == 2 and result.archived > 0
+    copies = list(archive.rglob("*.txt"))
+    assert len(copies) == 1
+    assert copies[0].parent.name == "2024-01"        # range par mois de jeu
+    assert copies[0].parent.parent.name == "PokerStars"
+
+    # la room efface l'original: l'archive suffit a reconstruire la base
+    source.unlink()
+    autre = Database(tmp_path / "reconstruite.db")
+    assert Importer(autre).import_directory(archive).hands == 2
+
+
+def test_archivage_incremental_sans_doublon(db, tmp_path):
+    source = tmp_path / "live.txt"
+    text = (DATA / "pokerstars_cash.txt").read_text(encoding="utf-8")
+    first, second = text.split("\n\n", 1)
+    source.write_text(first + "\n\n", encoding="utf-8")
+    _stable(source)
+    archive = tmp_path / "archive"
+    importer = Importer(db, archive_dir=archive)
+    importer.import_file(source)
+    with source.open("a", encoding="utf-8") as fh:
+        fh.write(second + "\n\n")
+    _stable(source)
+    importer.import_file(source)
+    autre = Database(tmp_path / "b.db")
+    assert Importer(autre).import_directory(archive).hands == 2   # aucune main en double

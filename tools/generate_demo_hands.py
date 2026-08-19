@@ -129,6 +129,7 @@ def generate(nb_hands: int, seed: int = 7) -> str:
                 break
 
         streets = [("FLOP", board[:3], 3), ("TURN", board[:4], 4), ("RIVER", board[:5], 5)]
+        allin = False
         for label, cards, size in streets:
             if len(in_hand) < 2:
                 break
@@ -138,8 +139,23 @@ def generate(nb_hands: int, seed: int = 7) -> str:
                 lines.append(f"*** TURN *** [{' '.join(cards[:3])}] [{cards[3]}]")
             else:
                 lines.append(f"*** RIVER *** [{' '.join(cards[:4])}] [{cards[4]}]")
+            if allin:
+                continue          # tapis paye: les cartes restantes sortent sans action
             bet_size = round(pot * rng.choice([0.33, 0.5, 0.66, 0.75]), 2)
             bettor = aggressor if aggressor in in_hand else in_hand[0]
+            # de temps en temps, tapis paye avant la riviere: c'est ce qui
+            # alimente les gains ajustes a l'equite
+            if label != "RIVER" and rng.random() < 0.07 and len(in_hand) >= 2:
+                shove = round(min(stacks[p] for p in in_hand), 2)
+                caller = next(p for p in in_hand if p != bettor)
+                lines.append(f"{bettor}: bets {money(shove)} and is all-in")
+                lines.append(f"{caller}: calls {money(shove)} and is all-in")
+                pot = round(pot + 2 * shove, 2)
+                stacks[bettor] -= shove
+                stacks[caller] -= shove
+                in_hand = [bettor, caller]
+                allin = True
+                continue
             actors = [p for p in in_hand]
             if rng.random() < STYLES[bettor][2]:
                 lines.append(f"{bettor}: bets {money(bet_size)}")
@@ -171,7 +187,14 @@ def generate(nb_hands: int, seed: int = 7) -> str:
             lines.append("*** SHOW DOWN ***")
             for name in in_hand:
                 lines.append(f"{name}: shows [{holes[name][0]} {holes[name][1]}] (main)")
-        winner = rng.choice(in_hand) if in_hand else big
+        # le gagnant est celui qui a reellement la meilleure main: les gains
+        # simules restent coherents avec les cartes (et donc avec l'EV)
+        if len(in_hand) > 1:
+            from pokertracker.core.equity.evaluator import compare
+            gagnants = compare([list(holes[n]) + board for n in in_hand])
+            winner = in_hand[gagnants[0]]
+        else:
+            winner = in_hand[0] if in_hand else big
         rake = round(min(pot * 0.05, 1.5), 2)
         collected = round(pot - rake, 2)
         lines.append(f"{winner} collected {money(collected)} from pot")

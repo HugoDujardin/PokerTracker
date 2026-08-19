@@ -51,11 +51,12 @@ COUNTERS: list[str] = [
     )],
     # --- showdown ---
     "wtsd", "wtsd_opp", "wsd", "wsd_opp", "wwsf", "wwsf_opp",
-    "showdowns", "allin_postflop",
+    "showdowns", "allin_postflop", "allin_ev_hands",
 ]
 
 #: compteurs a virgule (gains, mises) stockes en REAL
-FLOAT_COUNTERS: list[str] = ["amount_won", "amount_net", "bb_net", "invested", "rake_paid"]
+FLOAT_COUNTERS: list[str] = ["amount_won", "amount_net", "bb_net", "invested", "rake_paid",
+                             "ev_net", "ev_bb"]
 
 ALL_COUNTERS = COUNTERS + FLOAT_COUNTERS
 
@@ -77,6 +78,8 @@ class HandCounters:
 
     # ------------------------------------------------------------------
     def compute(self) -> Dict[str, Dict[str, float]]:
+        from .ev import ev_rows
+
         hand = self.hand
         bb = float(hand.big_blind() or 1)
         for seat in hand.seats:
@@ -91,6 +94,9 @@ class HandCounters:
         folded = self._preflop()
         self._postflop(folded)
         self._showdown(folded)
+        for player, values in ev_rows(hand).items():
+            if player in self.rows:
+                self.rows[player].update(values)
         return self.rows
 
     # ------------------------------------------------------- preflop

@@ -106,12 +106,18 @@ class DashboardTab(QWidget):
         self.unit_box = QComboBox()
         self.unit_box.addItems(["bb", "argent"])
         self.unit_box.currentIndexChanged.connect(self.refresh)
+        self.show_ev = QCheckBox("Courbe ajustee a l'equite (all-in EV)")
+        self.show_ev.setChecked(True)
+        self.show_ev.setToolTip("Remplace le resultat des all-in par leur esperance "
+                                "mathematique: l'ecart entre les deux courbes est la chance.")
+        self.show_ev.stateChanged.connect(self.refresh)
         self.filters = FilterBar(db)
         self.filters.changed.connect(self.refresh)
 
         self.graph = WinningsGraph()
         self.summary = QLabel("")
-        self.summary.setStyleSheet("font-size:13px; color:#cfd8e3;")
+        self.summary.setStyleSheet("color:#cfd8e3;")
+        self.summary.setWordWrap(True)
         self.sessions = QTableWidget(0, 7)
         self.sessions.setHorizontalHeaderLabels(
             ["Debut", "Duree", "Mains", "Limites", "Gains", "bb/100", "Tables"])
@@ -125,6 +131,7 @@ class DashboardTab(QWidget):
         head.addWidget(self.hero_box)
         head.addWidget(QLabel("Unite:"))
         head.addWidget(self.unit_box)
+        head.addWidget(self.show_ev)
         head.addStretch(1)
 
         split = QSplitter(Qt.Vertical)
@@ -169,14 +176,21 @@ class DashboardTab(QWidget):
         agg = self.db.aggregate([player_id], flt)
         curve = self.db.bankroll_curve(player_id, flt)
         self.graph.show_bb = self.unit_box.currentText() == "bb"
+        self.graph.show_ev = self.show_ev.isChecked()
         self.graph.set_curve(curve)
         hands = int(agg.get("hands", 0) or 0)
         net = float(agg.get("amount_net", 0) or 0)
         bb = float(agg.get("bb_net", 0) or 0)
         winrate = 100 * bb / hands if hands else 0
+        ev_bb = float(agg.get("ev_bb", 0) or 0)
+        ev_rate = 100 * ev_bb / hands if hands else 0
+        luck = bb - ev_bb
+        allin = int(agg.get("allin_ev_hands", 0) or 0)
         self.summary.setText(
             f"<b>{hands}</b> mains &nbsp;·&nbsp; gains <b>{net:+.2f}</b> &nbsp;·&nbsp; "
-            f"<b>{bb:+.1f}</b> bb &nbsp;·&nbsp; <b>{winrate:+.2f}</b> bb/100 &nbsp;·&nbsp; "
+            f"<b>{winrate:+.2f}</b> bb/100 &nbsp;·&nbsp; "
+            f"ajuste <b>{ev_rate:+.2f}</b> bb/100 &nbsp;·&nbsp; "
+            f"chance <b>{luck:+.1f}</b> bb sur {allin} all-in &nbsp;·&nbsp; "
             f"VPIP {sd.get('vpip').format(agg)} / PFR {sd.get('pfr').format(agg)} / "
             f"3Bet {sd.get('3bet').format(agg)}")
         self.stats_table.show_stats(agg)
@@ -521,7 +535,8 @@ class RangesTab(QWidget):
         btn_equity = QPushButton("Calculer l'equite")
         btn_equity.clicked.connect(self._compute)
         self.result = QLabel("")
-        self.result.setStyleSheet("font-size:14px; color:#cfd8e3;")
+        self.result.setStyleSheet("color:#cfd8e3;")
+        self.result.setWordWrap(True)
 
         top = QHBoxLayout()
         top.addWidget(QLabel("Range:"))
@@ -599,6 +614,19 @@ class ImportTab(QWidget):
         self.auto_import.setChecked(settings.auto_import)
         self.auto_import.stateChanged.connect(self._toggle_auto)
 
+        self.archive = QCheckBox("Archiver une copie des historiques importes")
+        self.archive.setChecked(settings.archive_enabled)
+        self.archive.setToolTip("Les rooms effacent leurs historiques au bout de quelques mois.\n"
+                                "La copie permet de reconstruire la base a tout moment.")
+        self.archive.stateChanged.connect(self._toggle_archive)
+        self.archive_label = QLabel("")
+        btn_archive_dir = QPushButton("Choisir le dossier d'archive...")
+        btn_archive_dir.clicked.connect(self._choose_archive)
+        archive_row = QHBoxLayout()
+        archive_row.addWidget(self.archive)
+        archive_row.addWidget(btn_archive_dir)
+        archive_row.addWidget(self.archive_label, 1)
+
         self.progress = QProgressBar()
         self.progress.setVisible(False)
         self.log = QPlainTextEdit()
@@ -615,9 +643,11 @@ class ImportTab(QWidget):
         layout.addWidget(self.folders)
         layout.addLayout(buttons)
         layout.addWidget(self.auto_import)
+        layout.addLayout(archive_row)
         layout.addWidget(self.progress)
         layout.addWidget(QLabel("Journal"))
         layout.addWidget(self.log, 1)
+        self.refresh_archive_label()
 
     # ------------------------------------------------------------------
     def _folders(self) -> List[str]:
@@ -662,12 +692,35 @@ class ImportTab(QWidget):
             self.watcher.stop()
             self.log.appendPlainText("Surveillance temps reel arretee.")
 
+    def _toggle_archive(self) -> None:
+        self.settings.archive_enabled = self.archive.isChecked()
+        self.settings.save()
+        self.watcher.archive_dir = self.settings.effective_archive_dir()
+        self.refresh_archive_label()
+
+    def _choose_archive(self) -> None:
+        folder = QFileDialog.getExistingDirectory(self, "Dossier d'archive",
+                                                  self.settings.archive_dir)
+        if folder:
+            self.settings.archive_dir = folder
+            self.settings.save()
+            self.watcher.archive_dir = self.settings.effective_archive_dir()
+            self.refresh_archive_label()
+
+    def refresh_archive_label(self) -> None:
+        if not self.settings.archive_enabled:
+            self.archive_label.setText("Archivage desactive.")
+            return
+        files, size = Importer(self.db, archive_dir=self.settings.archive_dir).archive_size()
+        self.archive_label.setText(
+            f"{self.settings.archive_dir}  —  {files} fichier(s), {size / 1e6:.1f} Mo")
+
     def run_import(self) -> None:
         folders = self._folders()
         if not folders:
             QMessageBox.warning(self, "Import", "Ajoutez d'abord un dossier d'historiques.")
             return
-        importer = Importer(self.db)
+        importer = Importer(self.db, archive_dir=self.settings.effective_archive_dir())
         self.progress.setVisible(True)
         total = 0
         for folder in folders:
@@ -683,4 +736,5 @@ class ImportTab(QWidget):
                     self.log.appendPlainText(f"ERREUR {err}")
         self.progress.setVisible(False)
         self.log.appendPlainText(f"Import termine: {total} nouvelles mains.")
+        self.refresh_archive_label()
         self.imported.emit(total)

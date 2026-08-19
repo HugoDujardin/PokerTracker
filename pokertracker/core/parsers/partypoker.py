@@ -8,13 +8,14 @@ from typing import Iterator
 
 from ..models import Action, ActionType, GameType, Hand, Seat, Street, TableFormat, normalize_cards
 from .base import HandParser, ParseError, registry, to_decimal
+from .dates import parse_datetime
 
 RE_SPLIT = re.compile(r"\n\s*\n(?=\*{3,}\s*Hand History for Game)", re.I)
 RE_GAME_ID = re.compile(r"Hand History for Game\s+(?P<hid>\d+)", re.I)
 RE_STAKES = re.compile(
     r"^\s*(?:(?P<sb>[$\u20ac\u00a3]?[\d.,]+)\s*/\s*)?(?P<bb>[$\u20ac\u00a3]?[\d.,]+)\s*(?P<cur>USD|EUR|GBP)?\s*"
     r"(?P<game>[A-Za-z' ]*?Hold'?em|[A-Za-z' ]*?Omaha[^-]*?)\s*-\s*"
-    r"(?P<date>\w+,\s+\w+\s+\d+,\s+\d{1,2}:\d{2}:\d{2}\s+\w+\s+\d{4})",
+    r"(?P<date>.+?)\s*$",
     re.M | re.I,
 )
 RE_TOURNEY = re.compile(r"Tournament\s+#?(?P<tid>\d+)", re.I)
@@ -51,12 +52,11 @@ class PartyPokerParser(HandParser):
         st = RE_STAKES.search(block)
         if not gid or not st:
             raise ParseError("en-tete PartyPoker introuvable")
-        try:
-            played_at = datetime.strptime(
-                re.sub(r"\s+([A-Z]{2,4})\s+(\d{4})$", r" \2", st.group("date")), "%A, %B %d, %H:%M:%S %Y"
-            )
-        except ValueError:
-            played_at = datetime.now()
+        played_at = parse_datetime(st.group("date"))
+        if played_at is None:
+            # ne jamais retomber sur la date du jour: cela fausserait tous les
+            # filtres par periode (ils porteraient sur la date d'import)
+            raise ParseError(f"date illisible: {st.group('date')!r}")
 
         bb = to_decimal(st.group("bb"))
         sb = to_decimal(st.group("sb")) if st.group("sb") else bb / 2

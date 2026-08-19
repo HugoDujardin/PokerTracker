@@ -6,17 +6,28 @@ import sys
 from pathlib import Path
 
 DARK_STYLE = """
-QWidget { background-color: #12161c; color: #d8dee6; font-family: 'Segoe UI'; font-size: 12px; }
+/* Aucune taille de police en pixels: la police de l'application (reglee sur
+   celle du systeme) est respectee, y compris avec la mise a l'echelle de
+   Windows 11 a 125 % ou 150 %. */
+QWidget { background-color: #12161c; color: #d8dee6; }
 QTabWidget::pane { border: 1px solid #262d38; }
 QTabBar::tab { background: #171d25; padding: 7px 16px; border: 1px solid #262d38; border-bottom: none; }
 QTabBar::tab:selected { background: #223044; color: #ffffff; }
 QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QDateEdit, QPlainTextEdit, QTextEdit {
-    background: #1a212a; border: 1px solid #2c3542; padding: 4px; border-radius: 3px; }
-QPushButton { background: #223044; border: 1px solid #2f4257; padding: 6px 12px; border-radius: 3px; }
+    background: #1a212a; border: 1px solid #2c3542; padding: 4px; border-radius: 3px;
+    min-height: 1.5em; }
+QComboBox { padding-right: 22px; }                 /* place pour la fleche */
+QComboBox::drop-down { width: 18px; }
+QSpinBox, QDoubleSpinBox, QDateEdit { padding-right: 18px; }
+QTabBar::tab { min-height: 1.6em; }
+QLabel { padding: 1px; }
+QPushButton { background: #223044; border: 1px solid #2f4257; padding: 6px 14px;
+    border-radius: 3px; min-height: 1.6em; }
 QPushButton:hover { background: #2b3f59; }
 QPushButton:pressed { background: #1b2836; }
 QTableWidget { background: #151b23; gridline-color: #262d38; alternate-background-color: #181f28; }
-QHeaderView::section { background: #1d242e; padding: 5px; border: none; border-right: 1px solid #262d38; }
+QHeaderView::section { background: #1d242e; padding: 5px 8px; border: none;
+    border-right: 1px solid #262d38; }
 QGroupBox { border: 1px solid #2a323d; margin-top: 12px; border-radius: 4px; }
 QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; color: #8fb3d9; }
 QProgressBar { border: 1px solid #2c3542; border-radius: 3px; text-align: center; }
@@ -68,6 +79,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.import_dir:
         return run_cli_import(db_path, args.import_dir)
 
+    from PySide6.QtCore import Qt
+    from PySide6.QtGui import QFont, QGuiApplication
     from PySide6.QtWidgets import QApplication
     from .core.db import Database
     from .core.importer import HandHistoryWatcher
@@ -76,8 +89,13 @@ def main(argv: list[str] | None = None) -> int:
     from .hud.profile import BUILTIN_PROFILES, HudProfile, default_profile
     from .ui.main_window import MainWindow
 
+    # respecte exactement le facteur d'echelle de Windows (125 %, 150 %...)
+    QGuiApplication.setHighDpiScaleFactorRoundingPolicy(
+        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication(sys.argv[:1])
     app.setApplicationName("PokerTracker")
+    if sys.platform.startswith("win"):
+        app.setFont(QFont("Segoe UI", 9))
     app.setStyleSheet(DARK_STYLE)
 
     db = Database(db_path)
@@ -88,8 +106,10 @@ def main(argv: list[str] | None = None) -> int:
         profile = HudProfile.from_json(
             BUILTIN_PROFILES.get(settings.hud_profile, default_profile()).to_json())
 
-    watcher = HandHistoryWatcher(db, settings.hh_folders, settings.scan_interval)
+    watcher = HandHistoryWatcher(db, settings.hh_folders, settings.scan_interval,
+                                 archive_dir=settings.effective_archive_dir())
     manager = HudManager(db, profile, min_hands=settings.hud_min_hands)
+    manager.restore_recent_tables()      # le HUD est utilisable des le lancement
     watcher.subscribe(manager.on_new_hands)
     controller = HudController(manager, settings)
 

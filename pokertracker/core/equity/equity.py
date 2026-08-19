@@ -104,6 +104,36 @@ def equity(hands: Sequence[Sequence[str] | str], board: Sequence[str] = (),
     return EquityResult(eq, [w / done for w in wins], [t / done for t in ties], done)
 
 
+def equity_exact(hands: Sequence[Sequence[str]], board: Sequence[str]) -> List[float]:
+    """Equite exacte par enumeration de toutes les cartes restantes.
+
+    Utilisable quand il manque au plus deux cartes au board (all-in au flop
+    ou au turn): 990 ou 44 tirages, c'est instantane et sans aleatoire.
+    """
+    from itertools import combinations
+
+    board = list(board)
+    used = set(board)
+    for h in hands:
+        used.update(h)
+    deck = [c for c in FULL_DECK if c not in used]
+    need = 5 - len(board)
+    if need <= 0:
+        runouts: List[Sequence[str]] = [()]
+    else:
+        runouts = list(combinations(deck, need))
+    wins = [0.0] * len(hands)
+    for runout in runouts:
+        full = board + list(runout)
+        scores = [evaluate(list(h) + full) for h in hands]
+        best = max(scores)
+        winners = [i for i, sc in enumerate(scores) if sc == best]
+        for i in winners:
+            wins[i] += 1.0 / len(winners)
+    total = len(runouts) or 1
+    return [w / total for w in wins]
+
+
 def equity_vs_random(hand: Sequence[str], iterations: int = 2000,
                      opponents: int = 1, seed: Optional[int] = None) -> float:
     return equity([list(hand)] + ["100%"] * opponents, iterations=iterations, seed=seed).equities[0]

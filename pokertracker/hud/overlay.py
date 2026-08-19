@@ -205,14 +205,16 @@ class HudController:
         self.offsets: Dict[str, QPoint] = {}
         self.popup = PopupWindow()
         self.note_callback: Optional[Callable[[str, str], None]] = None
+        self.interval_ms = 700
         self._timer = QTimer()
         self._timer.timeout.connect(self.refresh)
         self._font = QFont(manager.profile.font_family, manager.profile.font_size)
         self._load_offsets()
 
     # ------------------------------------------------------------------
-    def start(self, interval_ms: int = 700) -> None:
-        self._timer.start(interval_ms)
+    def start(self, interval_ms: int = 0) -> None:
+        self.interval_ms = interval_ms or self.interval_ms
+        self._timer.start(self.interval_ms)
         self.refresh()
 
     def stop(self) -> None:
@@ -220,8 +222,13 @@ class HudController:
         self.hide_all()
 
     def set_enabled(self, enabled: bool) -> None:
+        """Active ou desactive le HUD (et demarre la boucle si besoin)."""
         self.enabled = enabled
-        if not enabled:
+        if enabled:
+            if not self._timer.isActive():
+                self._timer.start(self.interval_ms)
+            self.refresh()
+        else:
             self.hide_all()
 
     def hide_all(self) -> None:

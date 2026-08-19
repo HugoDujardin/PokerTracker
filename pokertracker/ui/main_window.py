@@ -18,6 +18,7 @@ from ..hud.manager import HudManager
 from ..hud.overlay import HudController
 from ..hud.profile import BUILTIN_PROFILES, HudProfile
 from .demo_table import DemoTable
+from .scaling import fit_button, fit_widgets
 from .hud_editor import HudEditor
 from .tabs import DashboardTab, HandsTab, ImportTab, PlayersTab, RangesTab, ReportsTab
 
@@ -69,12 +70,16 @@ class HudTab(QWidget):
         form.addRow(btn_demo)
         form.addRow(btn_reset)
 
+        self.state_label = QLabel("")
+        self.state_label.setWordWrap(True)
+        self.state_label.setStyleSheet("color:#8fb3d9;")
         self.tables = QTableWidget(0, 5)
         self.tables.setHorizontalHeaderLabels(["Room", "Table", "Fenetre", "Joueurs suivis",
                                                "Derniere main"])
         self.tables.verticalHeader().setVisible(False)
         tables_box = QGroupBox("Tables detectees")
         tables_layout = QVBoxLayout(tables_box)
+        tables_layout.addWidget(self.state_label)
         tables_layout.addWidget(self.tables)
 
         self.editor = HudEditor(db, manager.profile)
@@ -118,15 +123,27 @@ class HudTab(QWidget):
         self.settings.save()
 
     def open_demo(self) -> None:
+        """Ouvre une fausse table, calquee sur la derniere table jouee."""
         if self.demo is None:
-            self.demo = DemoTable()
+            recent = self.db.recent_table_hands(1)
+            if recent:
+                row = recent[0]
+                self.demo = DemoTable(room=row["room"], table_name=row["table_name"] or "Demo",
+                                      seats=int(row["nb_players"] or 6))
+            else:
+                self.demo = DemoTable()
             self.manager.tracker.register_source(self.demo.as_table_window)
+        self.manager.restore_recent_tables()
         self.demo.show()
         self.demo.raise_()
+        self.controller.set_enabled(self.enabled.isChecked())
+        self.controller.refresh()
+        self.refresh_tables()
 
     def refresh_tables(self) -> None:
+        snapshot = self.manager.snapshot()
         rows = []
-        for table in self.manager.snapshot():
+        for table in snapshot:
             state = table.state
             rows.append((table.window.room, table.window.table_name,
                          f"{table.window.width}x{table.window.height}",
@@ -136,6 +153,23 @@ class HudTab(QWidget):
         for i, row in enumerate(rows):
             for col, value in enumerate(row):
                 self.tables.setItem(i, col, QTableWidgetItem(str(value)))
+        self.state_label.setText(self._diagnostic(snapshot))
+
+    def _diagnostic(self, snapshot) -> str:
+        """Explique en clair pourquoi le HUD affiche ou n'affiche pas de panneaux."""
+        if not self.enabled.isChecked():
+            return "HUD desactive : cochez « HUD active » pour l'afficher."
+        if self.db.counts()["hands"] == 0:
+            return ("Aucune main en base : importez d'abord vos historiques "
+                    "(onglet Import), le HUD a besoin de mains pour afficher des stats.")
+        if not snapshot:
+            return ("Aucune table de poker detectee. Ouvrez une table dans votre client, "
+                    "ou cliquez sur « Ouvrir une table de demonstration » pour un essai.")
+        panels = sum(len(t.panels) for t in snapshot)
+        if not panels:
+            return ("Table detectee mais aucun joueur reconnu : le HUD a besoin d'au moins "
+                    "une main deja jouee sur cette table (ou baissez « Mains minimum »).")
+        return f"{len(snapshot)} table(s) suivie(s), {panels} panneau(x) affiche(s)."
 
 
 class MainWindow(QMainWindow):
@@ -182,6 +216,10 @@ class MainWindow(QMainWindow):
         controller.note_callback = self._edit_note
 
         self._build_menu()
+        # les libelles ne doivent jamais etre tronques, quelle que soit la
+        # police du systeme ou la mise a l'echelle de l'ecran
+        fit_widgets(self)
+        fit_button(self.hands.replayer.btn_play, "Lecture", "Pause")
         self._status_timer = QTimer(self)
         self._status_timer.timeout.connect(self.update_status)
         self._status_timer.start(2000)
@@ -255,6 +293,7 @@ class MainWindow(QMainWindow):
 
     def reload_all(self) -> None:
         self.dashboard.reload_heroes()
+        fit_widgets(self)
         self.players.refresh_list()
         self.hands.reload_players()
         self.reports.reload_players()

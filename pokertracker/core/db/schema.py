@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from ..stats.counters import COUNTERS, FLOAT_COUNTERS
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 BASE_TABLES = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -62,6 +62,7 @@ CREATE TABLE IF NOT EXISTS hands (
     tournament_id TEXT,
     hero_id       INTEGER,
     file_id       INTEGER,
+    imported_at   TEXT,
     raw_text      TEXT,
     UNIQUE(hand_id, room)
 );

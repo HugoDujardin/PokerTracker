@@ -112,6 +112,9 @@ class Database:
     def migrate(self) -> None:
         with self._write_lock:
             self.conn.executescript(schema_mod.full_schema())
+            hands_cols = {r[1] for r in self.conn.execute("PRAGMA table_info(hands)")}
+            if "imported_at" not in hands_cols:
+                self.conn.execute("ALTER TABLE hands ADD COLUMN imported_at TEXT")
             existing = {r[1] for r in self.conn.execute("PRAGMA table_info(hand_players)")}
             for col in COUNTERS:
                 if col not in existing:
@@ -189,14 +192,15 @@ class Database:
                 cur = conn.execute(
                     """INSERT INTO hands(hand_id, room, played_at, played_ts, game, fmt, table_name,
                                          max_seats, nb_players, sb, bb, ante, currency, stake, board,
-                                         pot, rake, tournament_id, hero_id, file_id, raw_text)
-                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                                         pot, rake, tournament_id, hero_id, file_id, imported_at,
+                                         raw_text)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     (hand.hand_id, hand.room, hand.played_at.isoformat(timespec="seconds"),
                      hand.played_at.timestamp(), hand.game.value, hand.table_format.value,
                      hand.table_name, hand.max_seats, hand.nb_players, float(hand.sb), float(hand.bb),
                      float(hand.ante), hand.currency, stake_label(hand), " ".join(hand.board),
                      float(hand.pot), float(hand.rake), hand.tournament_id, hero_id, file_id,
-                     hand.raw_text),
+                     datetime.now().isoformat(timespec="seconds"), hand.raw_text),
                 )
                 db_hand_id = int(cur.lastrowid)
                 counters = compute_hand_counters(hand)
@@ -295,6 +299,45 @@ class Database:
         row = self.conn.execute(sql, list(player_ids)).fetchone()
         return {c: (row[c] or 0) for c in ALL_COUNTERS} if row else {c: 0 for c in ALL_COUNTERS}
 
+    def rebuild_counters(self, progress=None, batch: int = 500) -> int:
+        """Recalcule tous les compteurs a partir du texte des mains stockees.
+
+        Utile apres une mise a jour du moteur de statistiques (ajout d'un
+        compteur, calcul de l'EV sur une base existante).
+        """
+        from ..parsers import registry
+
+        total = self.conn.execute("SELECT COUNT(*) FROM hands").fetchone()[0]
+        counter_cols = list(ALL_COUNTERS)
+        update_sql = ("UPDATE hand_players SET " + ", ".join(f"{c} = ?" for c in counter_cols)
+                      + " WHERE hand_id = ? AND player_id = ?")
+        done = 0
+        offset = 0
+        while True:
+            rows = list(self.conn.execute(
+                "SELECT id, room, raw_text FROM hands ORDER BY id LIMIT ? OFFSET ?",
+                (batch, offset)))
+            if not rows:
+                break
+            offset += len(rows)
+            updates = []
+            for row in rows:
+                hands = list(registry.parse_text(row["raw_text"] or ""))
+                if not hands:
+                    continue
+                counters = compute_hand_counters(hands[0])
+                for player, values in counters.items():
+                    pid = self.player_id(player, row["room"])
+                    updates.append([values.get(c, 0) for c in counter_cols] + [row["id"], pid])
+                done += 1
+            with self._write_lock:
+                self.conn.executemany(update_sql, updates)
+                self.conn.commit()
+            if progress:
+                progress(done, total)
+        self.rebuild_totals()
+        return done
+
     def rebuild_totals(self) -> None:
         """Recalcule integralement la table de cumuls (maintenance)."""
         cols = ", ".join(ALL_COUNTERS)
@@ -357,23 +400,46 @@ class Database:
             "SELECT hp.*, p.name FROM hand_players hp JOIN players p ON p.id = hp.player_id "
             "WHERE hp.hand_id = ? ORDER BY hp.seat_no", (db_id,)))
 
+    def recent_table_hands(self, limit: int = 12, max_age_hours: float = 0) -> list[sqlite3.Row]:
+        """Derniere main connue de chaque table, la plus recente d'abord.
+
+        Sert a reconstruire l'etat des tables au demarrage: le HUD peut
+        s'afficher immediatement, sans attendre la fin de la main suivante.
+        """
+        params: list = []
+        age = ""
+        if max_age_hours:
+            age = "WHERE played_ts >= ?"
+            params.append(datetime.now().timestamp() - max_age_hours * 3600)
+        sql = (f"SELECT h.* FROM hands h JOIN ("
+               f"  SELECT room, table_name, MAX(played_ts) AS ts FROM hands {age} "
+               f"  GROUP BY room, table_name) m "
+               f"ON h.room = m.room AND h.table_name = m.table_name AND h.played_ts = m.ts "
+               f"ORDER BY h.played_ts DESC LIMIT ?")
+        return list(self.conn.execute(sql, params + [limit]))
+
     def heroes(self) -> list[sqlite3.Row]:
         return list(self.conn.execute("SELECT * FROM players WHERE is_hero = 1 ORDER BY name"))
 
     def bankroll_curve(self, player_id: int, flt: Optional[Filter] = None) -> list[tuple]:
-        """Courbe cumulee (timestamp, gains, gains en bb) pour un joueur."""
+        """Courbe cumulee d'un joueur.
+
+        Retourne (numero de main, horodatage, gains, gains en bb, gains
+        ajustes a l'equite, gains ajustes en bb).
+        """
         flt = flt or Filter()
         where, params = flt.where()
-        sql = (f"SELECT h.played_ts, hp.net, hp.bb_net FROM hand_players hp "
+        sql = (f"SELECT h.played_ts, hp.net, hp.bb_net, hp.ev_net, hp.ev_bb FROM hand_players hp "
                f"JOIN hands h ON h.id = hp.hand_id WHERE {where} AND hp.player_id = ? "
                f"ORDER BY h.played_ts")
-        cum_money = 0.0
-        cum_bb = 0.0
+        cum_money = cum_bb = cum_ev = cum_ev_bb = 0.0
         out = []
         for i, row in enumerate(self.conn.execute(sql, params + [player_id]), start=1):
             cum_money += row["net"] or 0.0
             cum_bb += row["bb_net"] or 0.0
-            out.append((i, row["played_ts"], cum_money, cum_bb))
+            cum_ev += row["ev_net"] or 0.0
+            cum_ev_bb += row["ev_bb"] or 0.0
+            out.append((i, row["played_ts"], cum_money, cum_bb, cum_ev, cum_ev_bb))
         return out
 
     def distinct(self, column: str) -> list[str]:

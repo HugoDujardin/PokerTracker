@@ -123,3 +123,28 @@ def test_popup(db):
     assert any(label == "VPIP" for label, _v, _n in sections[0][1])
     positions = [label for label, _v, _n in sections[-1][1] if label]
     assert positions == ["UTG", "MP"]        # les deux positions jouees par le heros
+
+
+def test_restauration_des_tables_au_demarrage(db):
+    """Le HUD doit etre utilisable des le lancement, sans attendre une main."""
+    hands = load("pokerstars_cash")
+    db.insert_hands(hands)
+    manager = HudManager(db, default_profile())
+    assert manager.tables == {}
+    assert manager.restore_recent_tables() == 1
+    state = list(manager.tables.values())[0]
+    assert state.table_name == "Aludra II"
+    assert len(manager.build_panels(state)) == 6
+
+
+def test_repli_sur_la_derniere_table(db):
+    """Une fenetre non reconnue (table de demonstration) affiche la derniere table."""
+    db.insert_hands(load("pokerstars_cash"))
+    db.insert_hands(load("ggpoker_cash"))          # deux tables suivies
+    manager = HudManager(db, default_profile())
+    assert manager.restore_recent_tables() == 2
+    inconnue = TableWindow(handle=9, title="Table de demonstration", room="Winamax",
+                           table_name="Nice 05")
+    assert manager.match_window(inconnue) is not None
+    manager.fallback_to_last_table = False
+    assert manager.match_window(inconnue) is None

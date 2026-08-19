@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import time
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Callable, Iterable, Optional, Sequence
 
@@ -19,12 +20,14 @@ class ImportResult:
     files: int = 0
     hands: int = 0
     skipped: int = 0
+    archived: int = 0                 # octets recopies dans l'archive
     errors: list[str] = field(default_factory=list)
 
     def __iadd__(self, other: "ImportResult") -> "ImportResult":
         self.files += other.files
         self.hands += other.hands
         self.skipped += other.skipped
+        self.archived += other.archived
         self.errors.extend(other.errors)
         return self
 
@@ -37,9 +40,13 @@ class Importer:
     settle_delay: float = 3.0
 
     def __init__(self, db: Database,
-                 on_hands: Optional[Callable[[list[Hand]], None]] = None) -> None:
+                 on_hands: Optional[Callable[[list[Hand]], None]] = None,
+                 archive_dir: Optional[str | os.PathLike] = None) -> None:
         self.db = db
         self.on_hands = on_hands
+        #: copie de securite des historiques (les rooms les effacent au bout
+        #: de quelques mois); None desactive l'archivage
+        self.archive_dir = Path(archive_dir) if archive_dir else None
 
     # ------------------------------------------------------------------
     def import_file(self, path: str | os.PathLike, force: bool = False) -> ImportResult:
@@ -86,14 +93,49 @@ class Importer:
         hands: list[Hand] = []
         for hand in parser.parse_text(chunk):
             hands.append(hand)
+        archived = self.archive(chunk, parser.room, hands, Path(path).name) if chunk else 0
         inserted = self.db.insert_hands(hands)
         self.db.upsert_file(path, parser.room, stat.st_size, stat.st_mtime,
                             offset + consumed, inserted)
         res.files = 1
         res.hands = inserted
+        res.archived = archived
         if hands and self.on_hands:
             self.on_hands(hands)
         return res
+
+    # ------------------------------------------------------------------
+    def archive(self, chunk: str, room: str, hands: list[Hand], filename: str) -> int:
+        """Recopie les mains importees dans l'archive locale.
+
+        Les rooms purgent leurs dossiers d'historiques (souvent au bout de
+        quelques mois): sans copie, les mains anciennes ne peuvent plus etre
+        reimportees en cas de reconstruction de la base. Le contenu est
+        ajoute en fin de fichier, si bien qu'un import incrementiel ne
+        duplique jamais ce qui a deja ete archive.
+        """
+        if not self.archive_dir or not chunk.strip():
+            return 0
+        when = hands[0].played_at if hands else datetime.now()
+        target_dir = self.archive_dir / (room or "inconnu") / f"{when:%Y-%m}"
+        try:
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target = target_dir / filename
+            with open(target, "a", encoding="utf-8") as fh:
+                if target.stat().st_size:
+                    fh.write("\n\n")
+                fh.write(chunk.strip())
+                fh.write("\n\n")
+        except OSError:
+            return 0
+        return len(chunk.encode("utf-8"))
+
+    def archive_size(self) -> tuple[int, int]:
+        """(nombre de fichiers, octets) presents dans l'archive."""
+        if not self.archive_dir or not self.archive_dir.exists():
+            return 0, 0
+        files = [p for p in self.archive_dir.rglob("*") if p.is_file()]
+        return len(files), sum(p.stat().st_size for p in files)
 
     # ------------------------------------------------------------------
     def import_directory(self, folder: str | os.PathLike, recursive: bool = True,
