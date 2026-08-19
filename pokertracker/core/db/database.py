@@ -458,6 +458,198 @@ class Database:
             "files": c.execute("SELECT COUNT(*) FROM files").fetchone()[0],
         }
 
+    # ---------------------------------------------------------- tournois
+    def insert_tournaments(self, results, bubble_ratio: float = 0.15) -> int:
+        """Enregistre des resumes de tournoi (ignore ceux deja connus).
+
+        `bubble_ratio` est la part du champ payee, utilisee pour estimer la
+        bulle quand le resume ne precise pas le nombre de places payees.
+        """
+        inserted = 0
+        with self._write_lock:
+            for r in results:
+                cost = float(r.cost)
+                won = float(r.won)
+                paid = max(1, round(r.entrants * bubble_ratio)) if r.entrants else 0
+                bubble = bool(paid and not r.itm and r.finish_place
+                              and paid < r.finish_place <= paid * 1.10 + 1)
+                started = r.started_at
+                cur = self.conn.execute(
+                    """INSERT OR IGNORE INTO tournaments(
+                           room, tournament_id, name, fmt, buyin, fee, bounty_buyin, currency,
+                           started_at, started_ts, entrants, finish_place, prize, bounty_won,
+                           cost, won, profit, itm, bubble, paid_places, imported_at, raw_text)
+                       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (r.room, r.tournament_id, r.name, r.fmt, float(r.buyin), float(r.fee),
+                     float(r.bounty_buyin), r.currency,
+                     started.isoformat(timespec="seconds") if started else None,
+                     started.timestamp() if started else 0.0,
+                     r.entrants, r.finish_place, float(r.prize), float(r.bounty_won),
+                     cost, won, won - cost, int(r.itm), int(bubble), paid,
+                     datetime.now().isoformat(timespec="seconds"), r.raw_text))
+                if cur.rowcount:
+                    inserted += 1
+            self.conn.commit()
+        return inserted
+
+    #: nombre de mains jouees dans le tournoi, calcule a la lecture
+    HANDS_SUBQUERY = ("(SELECT COUNT(*) FROM hands h WHERE h.tournament_id = t.tournament_id "
+                      "AND h.room = t.room)")
+
+    def tournaments(self, flt: Optional[Filter] = None, limit: int = 2000) -> list[sqlite3.Row]:
+        where, params = self._tournament_where(flt)
+        return list(self.conn.execute(
+            f"SELECT t.*, {self.HANDS_SUBQUERY} AS hands_played FROM tournaments t "
+            f"WHERE {where} ORDER BY t.started_ts DESC LIMIT ?", params + [limit]))
+
+    @staticmethod
+    def _tournament_where(flt: Optional[Filter]) -> tuple[str, list]:
+        flt = flt or Filter()
+        clauses: list[str] = []
+        params: list = []
+        if flt.rooms:
+            clauses.append(f"room IN ({','.join('?' * len(flt.rooms))})")
+            params.extend(flt.rooms)
+        if flt.formats:
+            clauses.append(f"fmt IN ({','.join('?' * len(flt.formats))})")
+            params.extend(flt.formats)
+        if flt.date_from:
+            clauses.append("started_ts >= ?")
+            params.append(flt.date_from.timestamp())
+        if flt.date_to:
+            clauses.append("started_ts <= ?")
+            params.append(flt.date_to.timestamp())
+        return (" AND ".join(clauses) if clauses else "1=1"), params
+
+    def tournament_stats(self, flt: Optional[Filter] = None) -> dict:
+        """Bilan financier des tournois: inscriptions, ITM, bulles, ROI..."""
+        where, params = self._tournament_where(flt)
+        row = self.conn.execute(
+            f"""SELECT COUNT(*) AS entries, SUM(cost) AS cost, SUM(won) AS won,
+                       SUM(profit) AS profit, SUM(itm) AS itm, SUM(bubble) AS bubbles,
+                       AVG(buyin + fee + bounty_buyin) AS avg_buyin,
+                       MAX(profit) AS best, MIN(profit) AS worst,
+                       SUM(CASE WHEN finish_place = 1 THEN 1 ELSE 0 END) AS wins,
+                       AVG(CASE WHEN entrants > 0 THEN 100.0 * finish_place / entrants END)
+                           AS avg_place_pct,
+                       SUM({self.HANDS_SUBQUERY}) AS hands
+                FROM tournaments t WHERE {where}""", params).fetchone()
+        entries = row["entries"] or 0
+        cost = row["cost"] or 0.0
+        return {
+            "entries": entries,
+            "cost": cost,
+            "won": row["won"] or 0.0,
+            "profit": row["profit"] or 0.0,
+            "itm": row["itm"] or 0,
+            "itm_pct": 100.0 * (row["itm"] or 0) / entries if entries else 0.0,
+            "bubbles": row["bubbles"] or 0,
+            "bubble_pct": 100.0 * (row["bubbles"] or 0) / entries if entries else 0.0,
+            "roi": 100.0 * (row["profit"] or 0.0) / cost if cost else 0.0,
+            "avg_buyin": row["avg_buyin"] or 0.0,
+            "best": row["best"] or 0.0,
+            "worst": row["worst"] or 0.0,
+            "wins": row["wins"] or 0,
+            "avg_place_pct": row["avg_place_pct"] or 0.0,
+            "hands": row["hands"] or 0,
+        }
+
+    def tournament_curve(self, flt: Optional[Filter] = None) -> list[tuple]:
+        """Courbe cumulee du profit en tournoi (numero, horodatage, profit)."""
+        where, params = self._tournament_where(flt)
+        cumul = 0.0
+        out = []
+        for i, row in enumerate(self.conn.execute(
+                f"SELECT started_ts, profit FROM tournaments WHERE {where} ORDER BY started_ts",
+                params), start=1):
+            cumul += row["profit"] or 0.0
+            out.append((i, row["started_ts"], cumul, cumul))
+        return out
+
+    def tournament_groups(self, column: str, flt: Optional[Filter] = None) -> dict:
+        allowed = {"fmt", "room", "currency"}
+        if column not in allowed:
+            raise ValueError(f"colonne non autorisee: {column}")
+        where, params = self._tournament_where(flt)
+        out = {}
+        for row in self.conn.execute(
+                f"""SELECT {column} AS grp, COUNT(*) AS entries, SUM(cost) AS cost,
+                           SUM(profit) AS profit, SUM(itm) AS itm, SUM(bubble) AS bubbles
+                    FROM tournaments WHERE {where} GROUP BY grp""", params):
+            entries = row["entries"] or 0
+            cost = row["cost"] or 0.0
+            out[row["grp"] or "-"] = {
+                "entries": entries, "cost": cost, "profit": row["profit"] or 0.0,
+                "itm": row["itm"] or 0,
+                "itm_pct": 100.0 * (row["itm"] or 0) / entries if entries else 0.0,
+                "bubbles": row["bubbles"] or 0,
+                "roi": 100.0 * (row["profit"] or 0.0) / cost if cost else 0.0,
+            }
+        return out
+
+    # ---------------------------------------------------------- bankroll
+    def add_bankroll_entry(self, kind: str, amount: float, note: str = "",
+                           when: Optional[datetime] = None, currency: str = "EUR") -> int:
+        when = when or datetime.now()
+        with self._write_lock:
+            cur = self.conn.execute(
+                "INSERT INTO bankroll_entries(date, ts, kind, amount, currency, note) "
+                "VALUES (?,?,?,?,?,?)",
+                (when.isoformat(timespec="seconds"), when.timestamp(), kind, float(amount),
+                 currency, note))
+            self.conn.commit()
+        return int(cur.lastrowid)
+
+    def bankroll_entries(self) -> list[sqlite3.Row]:
+        return list(self.conn.execute("SELECT * FROM bankroll_entries ORDER BY ts DESC"))
+
+    def delete_bankroll_entry(self, entry_id: int) -> None:
+        with self._write_lock:
+            self.conn.execute("DELETE FROM bankroll_entries WHERE id = ?", (entry_id,))
+            self.conn.commit()
+
+    def bankroll_summary(self, hero_id: Optional[int] = None) -> dict:
+        """Etat de la bankroll: mouvements + resultats cash + resultats tournois."""
+        movements = self.conn.execute(
+            "SELECT COALESCE(SUM(CASE WHEN kind = 'retrait' THEN -amount ELSE amount END), 0) "
+            "FROM bankroll_entries").fetchone()[0] or 0.0
+        cash = 0.0
+        if hero_id:
+            cash = self.conn.execute(
+                "SELECT COALESCE(SUM(hp.net), 0) FROM hand_players hp "
+                "JOIN hands h ON h.id = hp.hand_id "
+                "WHERE hp.player_id = ? AND h.fmt = 'cash'", (hero_id,)).fetchone()[0] or 0.0
+        tournaments = self.conn.execute(
+            "SELECT COALESCE(SUM(profit), 0) FROM tournaments").fetchone()[0] or 0.0
+        return {
+            "movements": movements,
+            "cash": cash,
+            "tournaments": tournaments,
+            "total": movements + cash + tournaments,
+        }
+
+    def bankroll_timeline(self, hero_id: Optional[int] = None) -> list[tuple]:
+        """Evolution de la bankroll dans le temps (mouvements, cash, tournois)."""
+        events: list[tuple[float, float]] = []
+        for row in self.conn.execute("SELECT ts, kind, amount FROM bankroll_entries"):
+            amount = -row["amount"] if row["kind"] == "retrait" else row["amount"]
+            events.append((row["ts"], amount))
+        for row in self.conn.execute("SELECT started_ts, profit FROM tournaments"):
+            events.append((row["started_ts"] or 0.0, row["profit"] or 0.0))
+        if hero_id:
+            for row in self.conn.execute(
+                    "SELECT h.played_ts, hp.net FROM hand_players hp "
+                    "JOIN hands h ON h.id = hp.hand_id "
+                    "WHERE hp.player_id = ? AND h.fmt = 'cash'", (hero_id,)):
+                events.append((row["played_ts"], row["net"] or 0.0))
+        events.sort(key=lambda e: e[0])
+        cumul = 0.0
+        out = []
+        for i, (ts, amount) in enumerate(events, start=1):
+            cumul += amount
+            out.append((i, ts, cumul, cumul))
+        return out
+
     # ------------------------------------------------------- profils HUD
     def save_profile(self, name: str, payload: str) -> None:
         with self._write_lock:

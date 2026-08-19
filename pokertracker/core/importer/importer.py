@@ -11,6 +11,7 @@ from typing import Callable, Iterable, Optional, Sequence
 from ..db import Database
 from ..models import Hand
 from ..parsers import registry
+from ..parsers.summaries import detect_summary
 
 HH_SUFFIXES = (".txt", ".log", ".hhs", ".xml")
 
@@ -20,6 +21,7 @@ class ImportResult:
     files: int = 0
     hands: int = 0
     skipped: int = 0
+    tournaments: int = 0              # resumes de tournoi enregistres
     archived: int = 0                 # octets recopies dans l'archive
     errors: list[str] = field(default_factory=list)
 
@@ -27,6 +29,7 @@ class ImportResult:
         self.files += other.files
         self.hands += other.hands
         self.skipped += other.skipped
+        self.tournaments += other.tournaments
         self.archived += other.archived
         self.errors.extend(other.errors)
         return self
@@ -47,6 +50,8 @@ class Importer:
         #: copie de securite des historiques (les rooms les effacent au bout
         #: de quelques mois); None desactive l'archivage
         self.archive_dir = Path(archive_dir) if archive_dir else None
+        #: part du champ payee, utilisee pour estimer la bulle des tournois
+        self.bubble_ratio = 0.15
 
     # ------------------------------------------------------------------
     def import_file(self, path: str | os.PathLike, force: bool = False) -> ImportResult:
@@ -64,22 +69,37 @@ class Importer:
             res.skipped += 1
             return res
 
-        parser = None
-        for p in registry.parsers:
+        text = ""
+        readers = registry.parsers
+        if readers:
             try:
-                head = p.read_file(path)
+                text = readers[0].read_file(path)
             except OSError as exc:
                 res.errors.append(f"{path}: {exc}")
                 return res
-            if p.detect(head):
-                parser = p
-                text = head
-                break
+
+        # un fichier de resume de tournoi ne contient pas de mains: il
+        # alimente le suivi financier (gains, places, ITM, bulles)
+        summary_parser = detect_summary(text)
+        if summary_parser is not None:
+            results = list(summary_parser.parse_text(text[offset:]))
+            saved = self.db.insert_tournaments(results, bubble_ratio=self.bubble_ratio)
+            dates = [r.started_at for r in results if r.started_at]
+            archived = self.archive(text[offset:], summary_parser.room, [], Path(path).name,
+                                    subfolder="tournois", when=min(dates) if dates else None)
+            self.db.upsert_file(path, summary_parser.room, stat.st_size, stat.st_mtime,
+                                len(text), 0)
+            res.files = 1
+            res.tournaments = saved
+            res.archived = archived
+            return res
+
+        parser = registry.detect(text)
         if parser is None:
             res.skipped += 1
             return res
 
-        if offset > len(text):       # fichier tronque/recree
+        if offset > len(text):       # fichier tronque ou recree par la room
             offset = 0
         chunk = text[offset:]
         # un fichier qui n'a pas bouge depuis quelques secondes est considere
@@ -89,10 +109,8 @@ class Importer:
         settled = (time.time() - stat.st_mtime) > self.settle_delay
         consumed = len(chunk) if settled else parser.complete_length(chunk)
         chunk = chunk[:consumed]
+        hands = list(parser.parse_text(chunk))
 
-        hands: list[Hand] = []
-        for hand in parser.parse_text(chunk):
-            hands.append(hand)
         archived = self.archive(chunk, parser.room, hands, Path(path).name) if chunk else 0
         inserted = self.db.insert_hands(hands)
         self.db.upsert_file(path, parser.room, stat.st_size, stat.st_mtime,
@@ -105,7 +123,8 @@ class Importer:
         return res
 
     # ------------------------------------------------------------------
-    def archive(self, chunk: str, room: str, hands: list[Hand], filename: str) -> int:
+    def archive(self, chunk: str, room: str, hands: list[Hand], filename: str,
+                subfolder: str = "", when: Optional[datetime] = None) -> int:
         """Recopie les mains importees dans l'archive locale.
 
         Les rooms purgent leurs dossiers d'historiques (souvent au bout de
@@ -116,8 +135,10 @@ class Importer:
         """
         if not self.archive_dir or not chunk.strip():
             return 0
-        when = hands[0].played_at if hands else datetime.now()
+        when = when or (hands[0].played_at if hands else datetime.now())
         target_dir = self.archive_dir / (room or "inconnu") / f"{when:%Y-%m}"
+        if subfolder:
+            target_dir = target_dir / subfolder
         try:
             target_dir.mkdir(parents=True, exist_ok=True)
             target = target_dir / filename
@@ -153,7 +174,7 @@ class Importer:
     def iter_files(folder: str | os.PathLike, recursive: bool = True) -> Iterable[Path]:
         folder = Path(folder)
         it = folder.rglob("*") if recursive else folder.glob("*")
-        for p in it:
+        for p in sorted(it):
             if p.is_file() and p.suffix.lower() in HH_SUFFIXES:
                 yield p
 

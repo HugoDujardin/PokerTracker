@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from ..stats.counters import COUNTERS, FLOAT_COUNTERS
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 BASE_TABLES = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -74,6 +74,46 @@ CREATE TABLE IF NOT EXISTS tables_seen (
     last_seen TEXT,
     UNIQUE(room, name)
 );
+
+CREATE TABLE IF NOT EXISTS tournaments (
+    id             INTEGER PRIMARY KEY,
+    room           TEXT NOT NULL,
+    tournament_id  TEXT NOT NULL,
+    name           TEXT,
+    fmt            TEXT,
+    buyin          REAL DEFAULT 0,
+    fee            REAL DEFAULT 0,
+    bounty_buyin   REAL DEFAULT 0,
+    currency       TEXT,
+    started_at     TEXT,
+    started_ts     REAL,
+    entrants       INTEGER DEFAULT 0,
+    finish_place   INTEGER DEFAULT 0,
+    prize          REAL DEFAULT 0,
+    bounty_won     REAL DEFAULT 0,
+    cost           REAL DEFAULT 0,
+    won            REAL DEFAULT 0,
+    profit         REAL DEFAULT 0,
+    itm            INTEGER DEFAULT 0,
+    bubble         INTEGER DEFAULT 0,
+    paid_places    INTEGER DEFAULT 0,
+    hands          INTEGER DEFAULT 0,
+    imported_at    TEXT,
+    raw_text       TEXT,
+    UNIQUE(room, tournament_id)
+);
+
+CREATE TABLE IF NOT EXISTS bankroll_entries (
+    id       INTEGER PRIMARY KEY,
+    date     TEXT NOT NULL,
+    ts       REAL NOT NULL,
+    kind     TEXT NOT NULL,          -- depot | retrait | ajustement
+    amount   REAL NOT NULL,
+    currency TEXT DEFAULT 'EUR',
+    note     TEXT DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_tournaments_ts ON tournaments(started_ts);
 
 CREATE TABLE IF NOT EXISTS hud_profiles (
     id      INTEGER PRIMARY KEY,

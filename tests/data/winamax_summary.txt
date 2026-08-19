@@ -1,0 +1,11 @@
+Winamax Poker - Tournament summary : Expresso(654321789)#0001
+Buy-In : 0.45€ + 0.05€
+Registered players : 3
+Prizepool : 1.35€
+Mode : tournament
+Type : holdem
+Speed : turbo
+Tournament started : 2024/01/15 19:22:33
+You played 4min 12s
+You finished in 1st place
+You won 1.35€

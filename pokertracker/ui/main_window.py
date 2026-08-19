@@ -21,6 +21,7 @@ from .demo_table import DemoTable
 from .scaling import fit_button, fit_widgets
 from .hud_editor import HudEditor
 from .tabs import DashboardTab, HandsTab, ImportTab, PlayersTab, RangesTab, ReportsTab
+from .tournaments_tab import TournamentsTab
 
 
 class HandsBridge(QObject):
@@ -190,6 +191,7 @@ class MainWindow(QMainWindow):
         self.players = PlayersTab(db)
         self.hands = HandsTab(db)
         self.reports = ReportsTab(db)
+        self.tournaments = TournamentsTab(db)
         self.ranges = RangesTab()
         self.hud_tab = HudTab(db, settings, manager, controller)
         self.import_tab = ImportTab(db, settings, watcher)
@@ -200,6 +202,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.players, "Joueurs")
         self.tabs.addTab(self.hands, "Mains")
         self.tabs.addTab(self.reports, "Rapports")
+        self.tabs.addTab(self.tournaments, "Tournois")
         self.tabs.addTab(self.ranges, "Ranges")
         self.tabs.addTab(self.hud_tab, "HUD")
         self.tabs.addTab(self.import_tab, "Import")
@@ -297,6 +300,7 @@ class MainWindow(QMainWindow):
         self.players.refresh_list()
         self.hands.reload_players()
         self.reports.reload_players()
+        self.tournaments.reload_players()
         self.manager.invalidate()
 
     def update_status(self) -> None:

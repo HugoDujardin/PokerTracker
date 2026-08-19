@@ -125,7 +125,7 @@ def test_fenetre_principale(qt_app, rempli, tmp_path):
     manager = HudManager(rempli, default_profile())
     controller = HudController(manager, settings)
     window = MainWindow(rempli, settings, watcher, manager, controller)
-    assert window.tabs.count() == 7
+    assert window.tabs.count() == 8
     window.update_status()
     assert "Mains:" in window.status_label.text()
     window._on_new_hands(load("ggpoker_cash"))
