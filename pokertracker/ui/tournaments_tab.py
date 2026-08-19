@@ -157,8 +157,10 @@ class TournamentsTab(QWidget):
 
         hero_id = self.hero_box.currentData()
         if self.curve_box.currentIndex() == 0:
+            self.graph.x_label = "tournois"
             self.graph.set_curve(self.db.tournament_curve(flt), currency)
         else:
+            self.graph.x_label = "mouvements"
             self.graph.set_curve(self.db.bankroll_timeline(hero_id), currency)
 
         rows = self.db.tournaments(flt)

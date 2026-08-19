@@ -14,6 +14,10 @@ l'interface est toujours celui du denominateur.
 | `bb100` | bb/100 | `bb_net` | `hands` | Gain moyen en grosses blindes pour 100 mains. |
 | `net` | Gains | `amount_net` | `hands` | Gain net cumule dans la devise de la table. |
 | `wr_hands` | % mains gagnees | `hands_won` | `hands` | Pourcentage de mains remportees. |
+| `ev_bb100` | bb/100 ajuste | `ev_bb` | `hands` | Gain en bb/100 ajuste a l'equite: les all-in sont remplaces par leur esperance mathematique. |
+| `ev_net` | Gains ajustes | `ev_net` | `hands` | Gain net ajuste a l'equite des all-in. |
+| `luck_bb` | Chance (bb) | `bb_net-ev_bb` | `hands` | Ecart entre gains reels et gains ajustes a l'equite, en grosses blindes: positif, les all-in ont ete favorables; negatif, defavorables. |
+| `allin_ev_hands` | Mains all-in evaluees | `allin_ev_hands` | `hands` | Nombre de mains dont le resultat a ete ajuste a l'equite. |
 
 ## Preflop
 

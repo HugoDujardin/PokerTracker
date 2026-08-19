@@ -6,6 +6,7 @@ separes par '+' pour construire des statistiques composites.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Callable, Iterable, Optional
 
@@ -62,12 +63,20 @@ class StatDef:
 
 
 def sum_expr(agg: dict, expr: str) -> float:
+    """Somme algebrique de compteurs: 'a+b', 'bb_net-ev_bb'..."""
     total = 0.0
-    for part in expr.split("+"):
-        part = part.strip()
-        if not part:
+    sign = 1.0
+    for token in re.split(r"([+-])", expr):
+        token = token.strip()
+        if not token:
             continue
-        total += float(agg.get(part, 0) or 0)
+        if token == "+":
+            sign = 1.0
+        elif token == "-":
+            sign = -1.0
+        else:
+            total += sign * float(agg.get(token, 0) or 0)
+            sign = 1.0
     return total
 
 
@@ -100,9 +109,9 @@ STATS: list[StatDef] = [
                         "leur esperance mathematique."),
     StatDef("ev_net", "Gains ajustes", "ev_net", "hands", "General", "money",
             description="Gain net ajuste a l'equite des all-in."),
-    StatDef("luck_bb", "Ecart chance (bb)", "bb_net", "hands", "General", "money", 1,
-            description="Reste informatif: comparer 'Gains' et 'Gains ajustes' donne la "
-                        "chance sur la periode."),
+    StatDef("luck_bb", "Chance (bb)", "bb_net-ev_bb", "hands", "General", "money", 1,
+            description="Ecart entre gains reels et gains ajustes a l'equite, en grosses "
+                        "blindes: positif, les all-in ont ete favorables; negatif, defavorables."),
     StatDef("allin_ev_hands", "Mains all-in evaluees", "allin_ev_hands", "hands", "General",
             "int", description="Nombre de mains dont le resultat a ete ajuste a l'equite."),
     # ------------------------------------------------------------- preflop

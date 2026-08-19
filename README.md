@@ -20,10 +20,15 @@ d'ou l'echantillon reduit (666 mains contre 4000).*
 | Domaine | Fonctionnalites |
 |---|---|
 | **Import** | Detection automatique des dossiers d'historiques, import initial massif, **import incremental temps reel** pendant la session (une main a peine ecrite par la room est lue en moins d'une seconde), gestion des mains encore en cours d'ecriture, dedoublonnage. |
+| **Archivage** | Copie de chaque main importee dans `%APPDATA%\PokerTracker\archive`, rangee par room et par mois. Les rooms purgent leurs dossiers au bout de quelques mois: l'archive permet de tout reimporter, y compris apres reconstruction de la base. |
 | **Rooms** | PokerStars (cash, Zoom, MTT/SNG), Winamax (cash, Expresso, MTT), GGPoker/GGNetwork, PartyPoker. Detection du format faite sur le contenu du fichier, pas sur son nom. |
-| **Statistiques** | 122 compteurs extraits par main, **55 statistiques** derivees (VPIP, PFR, RFI, 3Bet/4Bet/5Bet, Cold 4Bet, Fold to 3Bet, Squeeze, Steal, Fold vs steal, Resteal, Limp, Iso, C-Bet / Delayed C-Bet / Donk / Probe / Check-raise par street, Fold vs mise, AF, AFq, WWSF, WTSD, W$SD, bb/100...). Voir [docs/statistiques.md](docs/statistiques.md). |
+| **Statistiques** | 125 compteurs extraits par main, **59 statistiques** derivees (VPIP, PFR, RFI, 3Bet/4Bet/5Bet, Cold 4Bet, Fold to 3Bet, Squeeze, Steal, Fold vs steal, Resteal, Limp, Iso, C-Bet / Delayed C-Bet / Donk / Probe / Check-raise par street, Fold vs mise, AF, AFq, WWSF, WTSD, W$SD, bb/100...). Voir [docs/statistiques.md](docs/statistiques.md). |
 | **HUD** | Panneaux translucides toujours au premier plan, poses sur chaque siege, suivi des fenetres de table, deplacement a la souris memorise, popup detaille au survol ou au clic droit, note de joueur, couleurs conditionnelles, filtre par echantillon minimum. |
 | **HUD dynamique** | Plusieurs panneaux par profil, chacun avec sa **condition d'affichage** (position occupee a la main suivante, nombre de joueurs, profondeur de tapis en bb, nombre de mains, format de jeu). Le premier panneau dont la condition est vraie s'affiche : le HUD change tout seul selon la situation. Un panneau peut aussi afficher des stats **filtrees sur la position** du joueur. |
+| **Gains ajustes (all-in EV)** | Les mains dont le tapis part avant la riviere sont rejouees mathematiquement: la part du pot due a l'equite remplace le resultat tire au sort. Seconde courbe sur le graphique, statistiques `bb/100 ajuste` et `Chance (bb)`. Enumeration exacte au flop et au turn, Monte-Carlo preflop. |
+| **Tournois** | Lecture des resumes de tournoi (PokerStars, Winamax): buy-in, primes, entrants, place, gains. Bilan par periode et par format: inscriptions, ITM, **bulles**, ROI, profit, victoires, place moyenne, buy-in moyen. |
+| **Bankroll** | Depots, retraits et ajustements; bankroll = mouvements + resultats cash + resultats tournois, avec courbe d'evolution. |
+| **Coach IA** | Analyse d'un coup precis (street par street, avec equite a chaque etape et stats des adversaires) ou des statistiques d'un joueur (fuites principales et ajustements). Reponse en direct, contexte affiche avant tout envoi. Necessite une cle d'API Anthropic. |
 | **Replayer** | Rejeu action par action, table dessinee, mises, tapis, board, lecture automatique, **calcul d'equite** a l'etape courante (Monte-Carlo). |
 | **Rapports** | Statistiques croisees par position, limite, room, format, table, nombre de joueurs ; graphique de gains cumules (argent ou bb) ; decoupage automatique en sessions. |
 | **Joueurs** | Recherche, tableau comparatif, statistiques par position, notes, etiquettes et couleurs reprises dans le HUD. |
@@ -35,9 +40,11 @@ d'ou l'echantillon reduit (666 mains contre 4000).*
 | | |
 |---|---|
 | ![Tableau de bord](docs/images/tableau_de_bord.png) | ![Rapports](docs/images/rapports.png) |
-| Tableau de bord : courbe de gains, sessions, statistiques globales | Rapports : statistiques croisees par position |
+| Tableau de bord : gains reels et gains ajustes a l'equite | Rapports : statistiques croisees par position |
 | ![Replayer](docs/images/mains_replayer.png) | ![Editeur de HUD](docs/images/editeur_hud.png) |
 | Liste des mains et replayer avec calcul d'equite | Editeur de profil HUD et conditions dynamiques |
+| ![Tournois](docs/images/tournois.png) | ![Coach IA](docs/images/coach_ia.png) |
+| Tournois et bankroll: ROI, ITM, bulles, courbe | Coach IA: contexte envoye et analyse |
 
 ---
 
@@ -65,6 +72,17 @@ python run.py
 ```
 
 Python 3.10 ou plus recent est requis (teste avec 3.11).
+
+L'onglet Coach IA a besoin d'une dependance supplementaire et d'une cle
+d'API Anthropic:
+
+```powershell
+pip install anthropic
+setx ANTHROPIC_API_KEY "votre-cle"    # ou saisie directement dans l'onglet
+```
+
+Le reste du logiciel fonctionne sans, et **aucune donnee n'est envoyee tant
+qu'une analyse n'est pas lancee**.
 
 ---
 
@@ -97,6 +115,20 @@ python run.py --import "D:\HandHistory"
 python run.py --no-hud          # demarrer sans HUD
 python run.py --db D:\poker.db  # base a un autre emplacement
 ```
+
+---
+
+## Le HUD ne s'affiche pas ?
+
+Trois conditions doivent etre reunies: des **mains en base**, une **table
+detectee** (celle de votre client ou la table de demonstration) et la case
+**« HUD active »** cochee. L'onglet HUD affiche en permanence une ligne de
+diagnostic qui dit laquelle manque, et le **[guide complet du HUD](docs/guide_hud.md)**
+detaille chaque cas (table non reconnue, client lance en administrateur,
+plein ecran, panneaux hors ecran...).
+
+Le chemin le plus court pour un premier essai: onglet Import → importer,
+puis onglet HUD → « HUD active » → « Ouvrir une table de demonstration ».
 
 ---
 
@@ -203,12 +235,14 @@ Les rapports filtres, eux, interrogent le detail main par main.
 python -m pytest
 ```
 
-81 tests couvrent les parsers (dont les montants localises, les antes, les
+111 tests couvrent les parsers (dont les montants localises, les antes, les
 mains tronquees), le moteur de statistiques (3bet, squeeze, vol de blindes,
 c-bet, check-raise, probe, abattage), la base et ses filtres, l'import
 incremental, l'evaluateur et les equites de reference, les profils HUD et
-l'interface (en mode hors ecran), ainsi que la coherence entre les cumuls
-precalcules et le recalcul complet.
+l'interface (en mode hors ecran), la coherence entre les cumuls precalcules
+et le recalcul complet, les gains ajustes a l'equite (valeurs exactes et
+conservation de l'argent), l'archivage, les resumes de tournoi et le coach
+IA (avec un client simule, sans appel reseau).
 
 ---
 
@@ -225,6 +259,13 @@ precalcules et le recalcul complet.
   levent entre deux mains sont pris en compte a la main suivante.
 - Pas d'import des bases d'autres trackers (Hand2Note, PokerTracker 4,
   Holdem Manager) ni de base de joueurs partagee en ligne.
+- Les gains des tournois viennent des fichiers de resume: sans eux, les
+  mains de tournoi sont bien importees mais le bilan financier reste vide.
+  Les rooms n'indiquant pas le nombre de places payees, la **bulle** est
+  estimee a partir de la part du champ payee (15 % par defaut).
+- Le coach IA envoie a l'API Anthropic la main ou les statistiques
+  selectionnees (affichees a l'ecran avant l'envoi). Rien d'autre ne sort de
+  la machine, et l'onglet reste inactif sans cle d'API.
 - Omaha est parse et stocke, mais les statistiques sont pensees pour le
   Hold'em ; l'evaluateur d'equite choisit les 5 meilleures cartes sans
   appliquer la contrainte « 2 cartes en main » du PLO.

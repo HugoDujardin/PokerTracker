@@ -32,6 +32,8 @@ class WinningsGraph(QWidget):
         self.currency = "EUR"
         self.show_bb = True
         self.show_ev = True
+        #: nom de l'unite de l'axe horizontal (mains, tournois, mouvements...)
+        self.x_label = "mains"
         self.setMinimumHeight(220)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
@@ -109,9 +111,9 @@ class WinningsGraph(QWidget):
             painter.drawText(QRectF(0, y - 8, 50, 16), Qt.AlignRight | Qt.AlignVCenter,
                              f"{v:,.0f}")
         painter.drawText(QRectF(rect.left(), rect.bottom() + 4, rect.width(), 18),
-                         Qt.AlignLeft, "1 main")
+                         Qt.AlignLeft, f"1 {self.x_label[:-1] if self.x_label.endswith('s') else self.x_label}")
         painter.drawText(QRectF(rect.left(), rect.bottom() + 4, rect.width(), 18),
-                         Qt.AlignRight, f"{n} mains")
+                         Qt.AlignRight, f"{n} {self.x_label}")
 
         # legende
         painter.setPen(QPen(color, 2))
