@@ -41,6 +41,9 @@ class Settings:
     hud_follow_tables: bool = True
     hud_min_hands: int = 0
     hero_names: List[str] = field(default_factory=list)
+    ai_api_key: str = ""
+    ai_model: str = "claude-opus-5"
+    ai_effort: str = "high"
     theme: str = "dark"
     language: str = "fr"
     default_currency: str = "EUR"

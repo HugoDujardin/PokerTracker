@@ -21,6 +21,7 @@ from .demo_table import DemoTable
 from .scaling import fit_button, fit_widgets
 from .hud_editor import HudEditor
 from .tabs import DashboardTab, HandsTab, ImportTab, PlayersTab, RangesTab, ReportsTab
+from .coach_tab import CoachTab
 from .tournaments_tab import TournamentsTab
 
 
@@ -194,6 +195,7 @@ class MainWindow(QMainWindow):
         self.tournaments = TournamentsTab(db)
         self.ranges = RangesTab()
         self.hud_tab = HudTab(db, settings, manager, controller)
+        self.coach = CoachTab(db, settings, current_hand=self.selected_hand)
         self.import_tab = ImportTab(db, settings, watcher)
         self.import_tab.imported.connect(lambda n: self.reload_all())
 
@@ -204,6 +206,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.reports, "Rapports")
         self.tabs.addTab(self.tournaments, "Tournois")
         self.tabs.addTab(self.ranges, "Ranges")
+        self.tabs.addTab(self.coach, "Coach IA")
         self.tabs.addTab(self.hud_tab, "HUD")
         self.tabs.addTab(self.import_tab, "Import")
         self.setCentralWidget(self.tabs)
@@ -227,6 +230,10 @@ class MainWindow(QMainWindow):
         self._status_timer.timeout.connect(self.update_status)
         self._status_timer.start(2000)
         self.reload_all()
+
+    def selected_hand(self):
+        """Main actuellement chargee dans le replayer (pour le coach IA)."""
+        return self.hands.replayer.hand
 
     # ------------------------------------------------------------------
     def _build_menu(self) -> None:
@@ -301,6 +308,7 @@ class MainWindow(QMainWindow):
         self.hands.reload_players()
         self.reports.reload_players()
         self.tournaments.reload_players()
+        self.coach.reload_players()
         self.manager.invalidate()
 
     def update_status(self) -> None:
